@@ -7,7 +7,7 @@
 //! margin prepare [--key K] [--reachable] <env> <project.ndjson> <input.bin> <claim>...
 //! margin check   <input.bin>                                   native pre-check, no proof
 //! margin execute <input.bin>                                   run the guest without proving: cycle count
-//! margin prove   [--cluster URL] <input.bin> <receipt.bin>     zkVM proof
+//! margin prove   [--cluster URL] [--assume R1,R2] <input.bin> <receipt.bin>  zkVM proof
 //! margin build   [--project DIR] [--key K] [--cache DIR] [--jobs N] [--check-only [--cycles]] [--cluster URL]
 //!                <env> <RootModule> <receipt.bin> <claim>...  module by module, cached
 //! margin run     [--project DIR] [--key K] [--reachable] <env> <Module> <receipt.bin> <claim>...
@@ -336,9 +336,19 @@ fn run(args: Vec<String>) -> R<()> {
             _ => usage(),
         },
         "prove" => {
-            let a = parse(rest, &["--cluster"], &[])?;
+            let a = parse(rest, &["--cluster", "--assume"], &[])?;
             let [input, out] = a.pos.as_slice() else { return usage() };
-            prove(&std::fs::read(input)?, out, cluster(&a).as_ref())
+            // Module receipts the input assumes (comma-separated), resolved into the result.
+            let assumptions = a
+                .opts
+                .get("--assume")
+                .map(|list| list.split(',').map(|p| Ok(bincode::deserialize(&std::fs::read(p)?)?)).collect::<R<Vec<_>>>())
+                .transpose()?
+                .unwrap_or_default();
+            let (receipt, stats) = prove_receipt(&std::fs::read(input)?, &assumptions, cluster(&a).as_ref())?;
+            std::fs::write(out, bincode::serialize(&receipt)?)?;
+            eprintln!("proved: {stats}\nimage id: {}\nwrote {out}", image_id_hex());
+            Ok(())
         }
         "build" => {
             let a = parse(

@@ -61,4 +61,25 @@ for b in double_comm primes; do
   awk -v c="$cycles" -v s="$start" -v e="$end" -v b="$b" \
     'BEGIN { printf "RESULT %s: %d cycles (padded) in %.1f s = %.0f cycles/s\n", b, c, e - s, c / (e - s) }'
 done
+say "Composition: module receipts combined into one receipt (bench/compose)"
+C="$WORK/margin/bench/compose"
+(cd margin/zkvm && MARGIN_PREBUILT_GUEST="$C/guest.elf" \
+  cargo build --release -p margin-host --features kernel-nanoda,cuda)
+id="$("$M" image-id)"
+[ "$id" = "4022792efeedfabee594d66a70893b5972199e53c48802d3ad556f28b4debf85" ] || { echo "unexpected image id $id"; exit 1; }
+"$M" prove "$C/A.input" "$WORK/A.receipt" 2>&1 | grep -E "proved|rror"
+"$M" prove --assume "$WORK/A.receipt" "$C/B.input" "$WORK/B.receipt" 2>&1 | grep -E "proved|rror"
+"$M" prove --assume "$WORK/A.receipt,$WORK/B.receipt" "$C/final.input" "$WORK/final.receipt" 2>&1 | grep -E "proved|rror"
+if "$M" verify --checkers "$C/checkers.json" --envs "$C/envs.json" "$WORK/final.receipt"; then
+  echo "RESULT composition: VALID ($(stat -c %s "$WORK/final.receipt") bytes)"
+else
+  echo "RESULT composition: FAILED"
+fi
+# Negative check: the final run cannot be proved without its module receipts.
+if "$M" prove --assume "$WORK/A.receipt" "$C/final.input" "$WORK/bad.receipt" >/dev/null 2>&1; then
+  echo "RESULT composition-negative: UNEXPECTEDLY PROVED"
+else
+  echo "RESULT composition-negative: rejected as expected (missing module receipt)"
+fi
+
 say "Done. Please send back the RESULT lines and the GPU name above."
