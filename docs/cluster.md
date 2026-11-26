@@ -74,9 +74,20 @@ margin build --cluster http://localhost:8081 ...
 
 `margin` passes `$MARGIN_CLUSTER_KEY` (default `margin`) as the API key; Bento ignores it.
 
+## Measured GPU speed
+
+`scripts/gpu-bench.sh` on one rented RTX 4090 (2026-11-26, checker v0.0.1):
+
+| Input | Cycles (padded) | 4090 | 16-core CPU (VM) |
+|---|---|---|---|
+| `double_comm` (core Lean) | 19.9 M | 33.6 s (594 k cycles/s) | ~40 min |
+| `infinitely_many_primes` (Mathlib) | 30.5 M | 52.2 s (584 k cycles/s) | 61 min |
+
+About 590,000 cycles per second per 4090, roughly 73 times the CPU.
+
 ## Cost estimate
 
 Run `margin build --check-only` first: it checks every module natively and writes each
 module's prover input to the cache. `margin execute <cache>/<key>/input.bin` gives the
-exact cycle count of a module without proving; divide the total by the measured cycles
-per second of your GPUs.
+exact cycle count of a module without proving (`--cycles` sums them for you); divide the
+total by about 590,000 cycles per second per RTX 4090.
