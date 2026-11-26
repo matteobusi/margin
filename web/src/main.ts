@@ -27,7 +27,5 @@ function route() {
 
 document.title = BRAND.name;
 document.getElementById("brand-name")!.textContent = BRAND.name;
-document.getElementById("brand-footer")!.textContent =
-  `${BRAND.name} · ${BRAND.status} · open source · proofs never leave your machine`;
 window.addEventListener("hashchange", route);
 route();

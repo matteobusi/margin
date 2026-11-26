@@ -8,10 +8,9 @@ interface Env {
 }
 
 export function renderProve(root: HTMLElement) {
-
-  // ---- command builder ----
+  // Command builder.
   const module = input("module", "MyProject.Basic");
-  const theorems = input("theorems", "my_theorem other_theorem");
+  const theorems = input("theorems", "my_theorem");
   const anonymous = h("input", { type: "checkbox", id: "anon" });
   const checkOnly = h("input", { type: "checkbox", id: "checkonly" });
   const download = commandBlock("");
@@ -23,12 +22,12 @@ export function renderProve(root: HTMLElement) {
     const flags = [checkOnly.checked ? "--check-only" : "", anonymous.checked ? "--anonymous" : ""].filter(Boolean);
     setCommand(download, `curl -fsSLO ${new URL("prove.sh", document.baseURI).href}`);
     setCommand(run, ["bash prove.sh", ...flags, mod, ...(thms.length ? thms : ["my_theorem"])].join(" "));
-    setCommand(claim, `~/.margin/bin/margin claim --note "Your Name" margin-out/${thms[0] ?? "my_theorem"}.receipt ~/.margin/owner.key > claim.json`);
+    setCommand(claim, `~/.margin/bin/margin claim --note "Your Name" \\\n  margin-out/${thms[0] ?? "my_theorem"}.receipt ~/.margin/owner.key > claim.json`);
   };
   for (const el of [module, theorems, anonymous, checkOnly]) el.addEventListener("input", update);
   update();
 
-  // ---- supported versions ----
+  // Supported versions, from envs.json.
   const versions = h("tbody", {}, h("tr", {}, h("td", { colspan: "2", class: "note" }, "Loading…")));
   fetch("envs.json", { cache: "no-store" })
     .then((r) => r.json())
@@ -42,79 +41,69 @@ export function renderProve(root: HTMLElement) {
 
   root.append(
     h("h1", {}, "Prove a theorem"),
-    h("p", { class: "lead" },
-      "Proving runs on your own computer, with one script. Your proofs never leave your machine: " +
-      "the script downloads tools, never uploads anything."),
+    h("p", { class: "subtitle" }, "On your own computer, with one script."),
 
-    h("h2", {}, "1. Check that you have"),
-    h("ul", { class: "checklist" },
-      h("li", {}, "Linux (x86-64) or macOS (Apple silicon), with about ", h("strong", {}, "12 GB of RAM"), "."),
-      h("li", {}, "A Lean 4 project built with Lake, using one of the supported versions below. Its theorems must compile without ",
-        h("code", {}, "sorry"), "."),
-      h("li", {}, h("code", {}, "git"), ", ", h("code", {}, "curl"), " and ", h("code", {}, "elan"), " (you have them if you use Lean)."),
-    ),
-    h("table", { class: "versions" },
-      h("thead", {}, h("tr", {}, h("th", {}, "lean-toolchain"), h("th", {}, "Library"))),
+    h("p", {},
+      "You need Linux (x86-64) or a Mac with Apple silicon, about 12 GB of memory, and a Lean 4 project built " +
+      "with Lake whose theorems compile without ", h("code", {}, "sorry"), ". The project must use one of the " +
+      "versions below; others need a published environment, so ",
+      h("a", { href: "https://github.com/matteobusi/margin/issues" }, "open an issue"), " if yours is missing."),
+    h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, "lean-toolchain"), h("th", {}, "library"))),
       versions),
-    h("p", { class: "note" }, "Another version? It needs a published environment; open an issue."),
 
-    h("h2", {}, "2. Run the script in your project folder"),
+    h("h2", {}, "Run the script"),
+    h("p", {}, "Fill in your module and theorems to get the commands:"),
     h("div", { class: "builder" },
-      h("label", { for: "module" }, "Module that contains the theorems"), module,
-      h("label", { for: "theorems" }, "Theorems to prove (space-separated)"), theorems,
-      h("label", { class: "check" }, checkOnly, " Pre-check only (fast, no proof)"),
-      h("label", { class: "check" }, anonymous, " Anonymous (no owner key, authorship can never be claimed)"),
+      h("label", { for: "module" }, "Module"), module,
+      h("label", { for: "theorems" }, "Theorems"), theorems,
+      h("label", { class: "check" }, checkOnly, "Only pre-check (a couple of minutes, no proof)"),
+      h("label", { class: "check" }, anonymous, "Anonymous: no owner key, so nobody can ever claim authorship"),
     ),
-    h("p", {}, "Download the script once:"),
+    h("p", {}, "Download the script, then run it in the folder that contains your lakefile:"),
     download,
-    h("p", {}, "Then run, from the folder that contains ", h("code", {}, "lakefile.lean"), " or ", h("code", {}, "lakefile.toml"), ":"),
     run,
-    h("p", { class: "note" }, "Read it first if you like: ", h("a", { href: "prove.sh", target: "_blank" }, "prove.sh"),
-      " is a plain shell script. Run ", h("code", {}, "bash prove.sh --help"), " for all options."),
+    h("p", {},
+      "The script is plain bash; ", h("a", { href: "prove.sh", target: "_blank" }, "read it"),
+      " before running it if you like. It only downloads; nothing about your project leaves your computer."),
 
-    h("h2", {}, "What the script does"),
-    h("table", { class: "steps-table" },
-      h("tbody", {},
-        row("Checks your project", "Reads lean-toolchain and lake-manifest.json, and picks the matching environment.", "seconds"),
-        row("Downloads margin", "The prover CLI for your platform, checked against its SHA-256. Stored in ~/.margin.", "once"),
-        row("Builds lean4export", "The official Lean exporter, for your Lean version.", "once, a few minutes"),
-        row("Gets the library cache", "Downloads it, or builds it from your installed Mathlib. Checked against the published root.", "once, up to 30 min"),
-        row("Creates your owner key", "~/.margin/owner.key. Its public half goes in the receipt, so you can claim authorship later.", "once"),
-        row("Pre-checks", "Exports your theorems and runs the exact checker natively. Rejects sorry, native_decide and custom axioms. Estimates the proving time.", "about 2 min"),
-        row("Proves", "Runs the checker in the RISC Zero zkVM and writes margin-out/<theorem>.receipt.", "minutes to about an hour"),
-      )),
-
-    h("h2", {}, "3. Publish"),
-    h("ul", {},
-      h("li", {}, "Publish ", h("code", {}, "<theorem>.receipt"), " wherever you like: your web page, a paper, a repository. " +
-        "It shows your statements and hides your proofs. Anyone can check it on the ",
-        h("a", { href: "#/verify" }, "Verify page"), "."),
-      h("li", {}, "Also publish a statement file: your theorems with ", h("code", {}, ":= by sorry"),
-        ". Readers can then run ", h("code", {}, "margin match"), " against their own copy of the statement."),
-      h("li", {}, "To claim authorship, now or years later, sign the receipt with your owner key:"),
+    h("h2", {}, "What happens"),
+    h("ol", {},
+      h("li", {}, "It reads ", h("code", {}, "lean-toolchain"), " and ", h("code", {}, "lake-manifest.json"),
+        " to find your Lean and Mathlib versions."),
+      h("li", {}, "The first time only, it downloads the margin tool (checking its SHA-256), builds lean4export " +
+        "for your Lean version, downloads the library data for your Mathlib version (1.8 GB) and creates an owner key " +
+        "in ", h("code", {}, "~/.margin"), "."),
+      h("li", {}, "It builds your project, exports the theorems and runs the same checker natively. This rejects ",
+        h("code", {}, "sorry"), ", ", h("code", {}, "native_decide"), " and new axioms, and estimates the proving time."),
+      h("li", {}, "It asks before proving, then proves. Expect minutes for small theorems and about an hour for a " +
+        "typical Mathlib result on a 16-core machine. The receipt goes to ", h("code", {}, "margin-out/"), "."),
     ),
+
+    h("h2", {}, "Publish"),
+    h("p", {},
+      "Put the receipt wherever you like: next to a paper, on your web page, in a repository. It shows the " +
+      "statements and hides the proofs. Add a statement file, your theorems with ", h("code", {}, ":= by sorry"),
+      ", so that readers can check with ", h("code", {}, "margin match"), " that the receipt proves exactly what you claim."),
+    h("p", {}, "To show that you are the author, now or years later, sign the receipt with your owner key and publish the result:"),
     claim,
-    h("p", { class: "note" }, "Publish claim.json next to the receipt (anyone can check it on the Verify page). Keep ~/.margin/owner.key secret and backed up: " +
-      "without it nobody, including you, can claim the receipt."),
+    h("p", {},
+      "Keep ", h("code", {}, "~/.margin/owner.key"), " secret and backed up. Without it nobody, you included, can claim the receipt."),
 
     h("details", {},
-      h("summary", {}, "Using margin directly"),
-      h("p", {}, "The script only wraps the margin command-line tool. Its main commands:"),
-      h("pre", { class: "output" },
+      h("summary", {}, "Using the margin tool directly"),
+      h("p", {}, "The script is a wrapper around a few commands:"),
+      h("pre", {},
         "margin keygen  owner.key\n" +
         "margin run     --key owner.key <env.cache> <Module> <out.receipt> <theorem>...\n" +
         "margin verify  [--claim claim.json] <receipt>\n" +
         "margin match   <receipt> <env.cache> <statement.ndjson> <theorem>...\n" +
         "margin claim   --note TEXT <receipt> owner.key"),
-      h("p", {}, "Binaries and source: see the project repository."),
+      h("p", {}, "Binaries are on the ", h("a", { href: "https://github.com/matteobusi/margin/releases" }, "releases page"), "."),
     ),
   );
 }
 
 function input(id: string, placeholder: string) {
   return h("input", { id, type: "text", placeholder, spellcheck: "false", autocomplete: "off" });
-}
-
-function row(what: string, detail: string, time: string) {
-  return h("tr", {}, h("th", { scope: "row" }, what), h("td", {}, detail), h("td", { class: "note" }, time));
 }

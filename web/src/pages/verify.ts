@@ -25,8 +25,8 @@ export function renderVerify(root: HTMLElement) {
 
   root.append(
     h("h1", {}, "Verify a receipt"),
-    h("p", { class: "lead" }, "Verification runs in your browser and takes a fraction of a second. Nothing is uploaded."),
-    dropZone("Drop a receipt here (and, optionally, its authorship claim .json), or click to choose", { multiple: true }, async (files) => {
+    h("p", { class: "subtitle" }, "In this browser. Nothing is uploaded."),
+    dropZone("Drop a receipt here, with its authorship claim (.json) if it has one, or click to choose files.", { multiple: true }, async (files) => {
       for (const f of files) {
         if (f.name.endsWith(".json")) claim = { name: f.name, text: await f.text() };
         else receipt = { name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) };
@@ -35,18 +35,20 @@ export function renderVerify(root: HTMLElement) {
     }),
     chosen,
     out,
-    h("h2", {}, "What a valid receipt means"),
-    h("ul", {},
-      h("li", {}, "A published checker (", h("a", { href: "checkers.json" }, "checkers.json"),
-        ") type-checked proofs of the listed theorems inside the zkVM, over a published Lean or Mathlib version (",
-        h("a", { href: "envs.json" }, "envs.json"), "). These lists never come from the prover."),
-      h("li", {}, "Only the listed axioms were used. sorry, native_decide and custom axioms are always rejected."),
-      h("li", {}, "The statements are shown in raw kernel form: binder names become x0, x1, … and notation is unfolded (", h("code", {}, "LE.le … a b"), " is ", h("code", {}, "a ≤ b"), ")."),
-      h("li", {}, "An owner key is a pseudonym. A valid authorship claim proves that whoever signed it holds that key; " +
-        "it says who they are only if they published the key somewhere tied to them."),
-    ),
-    h("p", {}, "To be certain the receipt proves exactly the statement you mean, write it in your own .lean file with ",
-      h("code", {}, "sorry"), " and run ", h("code", {}, "margin match"), ". See ", h("a", { href: "#/about" }, "How it works"), "."),
-    h("p", { class: "note" }, "No receipt at hand? Try one from the ", h("a", { href: "#/examples" }, "examples"), "."),
+    h("p", { class: "note" }, "No receipt at hand? Try one of the ", h("a", { href: "#/examples" }, "examples"), "."),
+
+    h("h2", {}, "What a valid receipt tells you"),
+    h("p", {},
+      "That a published checker (", h("a", { href: "checkers.json" }, "checkers.json"), ") type-checked proofs " +
+      "of the listed theorems over a published version of Lean or Mathlib (", h("a", { href: "envs.json" }, "envs.json"),
+      "), using only the listed axioms. Both lists come with this site and its source code, never from the prover."),
+    h("p", {},
+      "The statements are printed as the kernel sees them: bound variables are named x0, x1, … and notation is " +
+      "unfolded, so ", h("code", {}, "LE.le … a b"), " means ", h("code", {}, "a ≤ b"), ". To be sure that the " +
+      "receipt proves exactly the statement you have in mind, write it in your own .lean file with ",
+      h("code", {}, "sorry"), " and compare with ", h("code", {}, "margin match"), "."),
+    h("p", {},
+      "An owner key is a pseudonym. A valid authorship claim shows that whoever signed it holds that key; it says " +
+      "who they are only if they have published the key somewhere tied to their name."),
   );
 }

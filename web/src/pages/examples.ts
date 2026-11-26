@@ -12,10 +12,10 @@ interface Example {
 }
 
 export function renderExamples(root: HTMLElement) {
-  const list = h("div", { class: "examples" }, h("p", { class: "note" }, "Loading…"));
+  const list = h("div", {}, h("p", { class: "note" }, "Loading…"));
   root.append(
     h("h1", {}, "Examples"),
-    h("p", { class: "lead" }, "Real receipts, made with the published checker. Verify them here, or download them."),
+    h("p", { class: "subtitle" }, "Receipts made with the published checker."),
     list,
   );
   fetch("examples/index.json", { cache: "no-store" })
@@ -23,24 +23,24 @@ export function renderExamples(root: HTMLElement) {
     .then((items: Example[]) => {
       list.replaceChildren();
       if (items.length === 0) {
-        list.append(h("p", { class: "note" }, "No published examples yet."));
+        list.append(h("p", {}, "The examples are being re-made with the current checker and will be back shortly."));
         return;
       }
-      for (const ex of items) list.append(card(ex));
+      for (const ex of items) list.append(example(ex));
     })
-    .catch(() => list.replaceChildren(h("p", { class: "note" }, "Could not load examples.")));
+    .catch(() => list.replaceChildren(h("p", { class: "note" }, "Could not load the examples.")));
 }
 
-function card(ex: Example) {
+function example(ex: Example) {
   const out = h("div", { "aria-live": "polite" });
-  const button = h("button", { class: "button primary", type: "button" }, "Verify in this browser");
+  const button = h("button", { class: "link", type: "button" }, "verify it here");
   button.addEventListener("click", async () => {
     button.setAttribute("disabled", "");
     out.replaceChildren(h("p", { class: "note" }, "Checking…"));
     try {
-      const fetchBytes = (p: string) => fetch(`examples/${p}`).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b));
+      const bytes = (p: string) => fetch(`examples/${p}`).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b));
       const [receipt, claim] = await Promise.all([
-        fetchBytes(ex.receipt),
+        bytes(ex.receipt),
         ex.authorship ? fetch(`examples/${ex.authorship}`).then((r) => r.text()) : Promise.resolve(undefined),
       ]);
       out.replaceChildren(resultView(await verifyPublished(receipt, claim)));
@@ -51,15 +51,15 @@ function card(ex: Example) {
     }
   });
   const links: (Node | string)[] = [
-    h("a", { href: `examples/${ex.receipt}`, download: "" }, "receipt"), " · ",
-    h("a", { href: `examples/${ex.statement}`, target: "_blank" }, "statement file"),
+    button, " · ",
+    h("a", { href: `examples/${ex.receipt}`, download: "" }, "download the receipt"), " · ",
+    h("a", { href: `examples/${ex.statement}`, target: "_blank" }, "statement"),
   ];
   if (ex.authorship) links.push(" · ", h("a", { href: `examples/${ex.authorship}`, target: "_blank" }, "authorship claim"));
-  return h("div", { class: "card" },
-    h("h3", {}, ex.title),
+  return h("section", { class: "example" },
+    h("h2", {}, ex.title),
     h("p", {}, ex.description),
-    h("p", { class: "links" }, ...links),
-    h("div", { class: "cta" }, button),
+    h("p", { class: "small" }, ...links),
     out,
   );
 }
