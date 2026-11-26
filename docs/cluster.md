@@ -76,18 +76,19 @@ margin build --cluster http://localhost:8081 ...
 
 ## Measured GPU speed
 
-`scripts/gpu-bench.sh` on one rented RTX 4090 (2026-11-26, checker v0.0.1):
+`scripts/gpu-bench.sh` on rented GPUs (2026-11-26, checker v0.0.1, both about $0.50/h):
 
-| Input | Cycles (padded) | 4090 | 16-core CPU (VM) |
-|---|---|---|---|
-| `double_comm` (core Lean) | 19.9 M | 33.6 s (594 k cycles/s) | ~40 min |
-| `infinitely_many_primes` (Mathlib) | 30.5 M | 52.2 s (584 k cycles/s) | 61 min |
+| Input | Cycles (padded) | RTX 5090 | RTX 4090 | 16-core CPU (VM) |
+|---|---|---|---|---|
+| `double_comm` (core Lean) | 19.9 M | 23.8 s (838 k/s) | 33.6 s (594 k/s) | ~40 min |
+| `infinitely_many_primes` (Mathlib) | 30.5 M | 36.6 s (832 k/s) | 52.2 s (584 k/s) | 61 min |
 
-About 590,000 cycles per second per 4090, roughly 73 times the CPU.
+About 835,000 cycles per second per 5090 (1.4 times a 4090 at the same rental price,
+about 100 times the CPU). Prefer 5090s.
 
 ## Cost estimate
 
 Run `margin build --check-only` first: it checks every module natively and writes each
 module's prover input to the cache. `margin execute <cache>/<key>/input.bin` gives the
 exact cycle count of a module without proving (`--cycles` sums them for you); divide the
-total by about 590,000 cycles per second per RTX 4090.
+total by about 835,000 cycles per second per RTX 5090 (590,000 per 4090).
