@@ -2,7 +2,9 @@
 # Benchmark Margin proving on an NVIDIA GPU (for example a rented RTX 4090).
 #
 # On a fresh Ubuntu 22.04/24.04 machine with the NVIDIA driver and the CUDA toolkit
-# (nvcc, 12.x) installed, as most GPU rental images provide:
+# (nvcc, 12.x) installed, as most GPU rental images provide, plus build tools:
+#
+#   apt-get install -y build-essential git curl pkg-config libssl-dev protobuf-compiler
 #
 #   curl -fsSL https://raw.githubusercontent.com/matteobusi/margin/main/scripts/gpu-bench.sh | bash
 #
@@ -18,6 +20,11 @@ WORK="${WORK:-$HOME/margin-bench}"
 say() { printf '\n==> %s\n' "$*"; }
 command -v nvidia-smi >/dev/null || { echo "nvidia-smi not found: no NVIDIA driver?"; exit 1; }
 command -v nvcc >/dev/null || { echo "nvcc not found: install the CUDA toolkit (12.x)"; exit 1; }
+for t in cc git pkg-config protoc; do
+  command -v "$t" >/dev/null || { echo "$t not found: apt-get install -y build-essential git pkg-config libssl-dev protobuf-compiler"; exit 1; }
+done
+# Debug info roughly doubles the build output; not needed here.
+export CARGO_PROFILE_RELEASE_DEBUG="${CARGO_PROFILE_RELEASE_DEBUG:-false}"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 nvcc --version | tail -1
 nproc; free -g | sed -n 2p
