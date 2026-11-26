@@ -1,6 +1,27 @@
 # Large developments: cheaper guest, per-module receipts, GPU clusters
 
-Status: design, 2026-11-26. Target: grh-compact (Lean v4.35.0, Mathlib 56a0058).
+Status: implemented (steps 1-4), 2026-11-26. Target: grh-compact (Lean v4.35.0, Mathlib 56a0058).
+
+## Validation so far
+
+Composition, end to end, on an RTX 5090 (`bench/compose`, three modules, core Lean):
+
+| Run | Cycles (padded) | 5090 |
+|---|---|---|
+| module `A` (definition, `omega` lemma) | 56.6 M | 67.0 s |
+| module `B`, assuming `A` | 2.6 M | 3.7 s |
+| final run, assuming `A` and `B` | 2.1 M | 3.0 s |
+
+The composed receipt (224 KB) verifies; it shows only the claim and the definition its
+statement uses, and the axioms of module `A` reach the claim. Proving the final run
+without one of its module receipts fails. Unit tests cover: another image or environment,
+an unverified module receipt, a tampered module opening, a hidden definition in the
+statement, `sorry` inside a module.
+
+Cheaper guest (step 1) on sample A: 2.55 G → 0.78 G padded cycles.
+
+Still to measure: the cycle count of all of grh-compact (`margin build --check-only
+--cycles`), and a real Bento cluster run.
 
 ## Measurements that drive the design
 
