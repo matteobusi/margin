@@ -13,6 +13,8 @@ path = "src/main.rs"
 [features]
 # In-process prover with Apple GPU acceleration.
 metal = ["risc0-zkvm/metal"]
+# In-process prover with NVIDIA GPU acceleration (needs the CUDA toolkit, nvcc, to build).
+cuda = ["risc0-zkvm/cuda"]
 kernel-nanoda = ["margin-methods/kernel-nanoda"]
 unsound-skip-typecheck = ["margin-methods/unsound-skip-typecheck"]
 
