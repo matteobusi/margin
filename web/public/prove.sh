@@ -32,8 +32,8 @@ MARGIN_VERSION="v0.0.1"
 MARGIN_REPO="matteobusi/margin"
 # SHA-256 of the release binaries. Filled in when a release is published; while empty,
 # the script checks against the release's SHA256SUMS file instead (and says so).
-SHA_LINUX_X86_64=""
-SHA_MACOS_ARM64=""
+SHA_LINUX_X86_64="d506c09d0b188ad2fcee5db7f7f780ac0f9babfaaa41a5ccd142170dad2da02f"
+SHA_MACOS_ARM64="ec7da80853c7a4a67c2bd56a2629fd43ecd34b44ac6e90f78ca384541119c971"
 LEAN4EXPORT_URL="https://github.com/leanprover/lean4export"
 LEAN4EXPORT_REV="df81913eee5519d5a88ae5b0fd701b5298cc29ab"
 # Supported environments, one per line:
