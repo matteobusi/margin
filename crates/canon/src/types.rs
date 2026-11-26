@@ -131,14 +131,38 @@ pub enum ExprNode {
 }
 
 impl ExprNode {
-    pub fn children(&self) -> Vec<ExprId> {
-        match self {
-            ExprNode::App(f, a) => vec![*f, *a],
-            ExprNode::Lam(t, b) | ExprNode::Pi(t, b) => vec![*t, *b],
-            ExprNode::Let(t, v, b, _) => vec![*t, *v, *b],
-            ExprNode::Proj(_, _, e) => vec![*e],
-            _ => Vec::new(),
-        }
+    /// Direct sub-terms, in field order. No allocation (this runs for every node).
+    pub fn children(&self) -> Children {
+        let z = ExprId(0);
+        let (arr, len) = match self {
+            ExprNode::App(f, a) => ([*f, *a, z], 2),
+            ExprNode::Lam(t, b) | ExprNode::Pi(t, b) => ([*t, *b, z], 2),
+            ExprNode::Let(t, v, b, _) => ([*t, *v, *b], 3),
+            ExprNode::Proj(_, _, e) => ([*e, z, z], 1),
+            _ => ([z, z, z], 0),
+        };
+        Children { arr, len }
+    }
+}
+
+/// The direct sub-terms of a node (at most three).
+#[derive(Clone, Copy)]
+pub struct Children {
+    arr: [ExprId; 3],
+    len: u8,
+}
+
+impl Children {
+    pub fn as_slice(&self) -> &[ExprId] {
+        &self.arr[..self.len as usize]
+    }
+}
+
+impl IntoIterator for Children {
+    type Item = ExprId;
+    type IntoIter = core::iter::Take<core::array::IntoIter<ExprId, 3>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.arr.into_iter().take(self.len as usize)
     }
 }
 

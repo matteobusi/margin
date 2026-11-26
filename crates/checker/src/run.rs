@@ -59,6 +59,9 @@ type NameMap<V> = hashbrown::HashMap<Name, V, core::hash::BuildHasherDefault<mar
 struct Entry<'i> {
     decl: Decl,
     origin: Origin,
+    /// User declarations: the constants they reference (computed once, for the
+    /// existence check and the axiom sets).
+    consts: Vec<Name>,
     /// Transitive axiom set: committed (environment, modules; borrowed from the input)
     /// or computed (user).
     axioms: alloc::borrow::Cow<'i, [Name]>,
@@ -184,7 +187,7 @@ pub fn run_profiled<K: Kernel>(
     verify_openings(&input.env_proof, &leaves, &input.env_root, decoded.first().map(|(d, _)| d))?;
     for ((decl, _), e) in decoded.into_iter().zip(&input.env_decls) {
         register(&mut by_name, &decl, entries.len())?;
-        entries.push(Entry { decl, origin: Origin::Env, axioms: e.axioms.as_slice().into() });
+        entries.push(Entry { decl, origin: Origin::Env, consts: Vec::new(), axioms: e.axioms.as_slice().into() });
     }
     mark("run: verified env inclusion");
 
@@ -207,7 +210,7 @@ pub fn run_profiled<K: Kernel>(
         for ((decl, header_only), e) in decoded.into_iter().zip(&dep.entries) {
             register(&mut by_name, &decl, entries.len())?;
             let origin = if header_only { Origin::DepHeader } else { Origin::Dep };
-            entries.push(Entry { decl, origin, axioms: e.axioms.as_slice().into() });
+            entries.push(Entry { decl, origin, consts: Vec::new(), axioms: e.axioms.as_slice().into() });
         }
         dep_roots.push(j.iface_root);
     }
@@ -215,6 +218,7 @@ pub fn run_profiled<K: Kernel>(
 
     // 3. User declarations: policy checks, then the kernel.
     let first_user = entries.len();
+    let mut scan = crate::env::ConstScan::new(&arena);
     for bytes in &input.user_decls {
         let decl = decode_decl_trusted(bytes, &mut arena)?;
         let key = decl.key();
@@ -228,13 +232,14 @@ pub fn run_profiled<K: Kernel>(
         }
         // Every referenced constant must already exist (or be defined by this block).
         let own: BTreeSet<Name> = decl.defined_names().into_iter().collect();
-        for c in constants(&arena, &decl.exprs()) {
-            if !by_name.contains_key(&c) && !own.contains(&c) {
-                return Err(CheckError::UnknownConstant { decl: key, constant: c });
+        let consts: Vec<Name> = scan.scan(&arena, &decl.exprs()).into_iter().collect();
+        for c in &consts {
+            if !by_name.contains_key(c) && !own.contains(c) {
+                return Err(CheckError::UnknownConstant { decl: key, constant: c.clone() });
             }
         }
         register(&mut by_name, &decl, entries.len())?;
-        entries.push(Entry { decl, origin: Origin::User, axioms: alloc::borrow::Cow::Owned(Vec::new()) });
+        entries.push(Entry { decl, origin: Origin::User, consts, axioms: alloc::borrow::Cow::Owned(Vec::new()) });
     }
     mark("run: user decls decoded + policy");
 
@@ -251,8 +256,8 @@ pub fn run_profiled<K: Kernel>(
     //    declarations only refer to earlier ones, or to their own block.
     for i in first_user..entries.len() {
         let mut set: Vec<Name> = Vec::new();
-        for c in constants(&arena, &entries[i].decl.exprs()) {
-            let j = *by_name.get(&c).ok_or(CheckError::MissingDependency(c))?;
+        for c in &entries[i].consts {
+            let j = *by_name.get(c).ok_or_else(|| CheckError::MissingDependency(c.clone()))?;
             if j != i {
                 set.extend(entries[j].axioms.iter().cloned());
             }

@@ -89,33 +89,60 @@ pub fn full_leaf(arena: &Arena, d: &Decl, full: &[u8], axioms: &[Name]) -> Hash3
 
 /// Constants referenced by the expressions reachable from `roots`.
 pub fn constants(arena: &Arena, roots: &[ExprId]) -> alloc::collections::BTreeSet<Name> {
-    let mut seen = alloc::collections::BTreeSet::new();
-    let mut ids = alloc::collections::BTreeSet::new();
-    let (mut nat, mut string) = (false, false);
-    let mut stack: Vec<ExprId> = roots.to_vec();
-    while let Some(id) = stack.pop() {
-        if !seen.insert(id) {
-            continue;
+    ConstScan::new(arena).scan(arena, roots)
+}
+
+/// Reusable [`constants`] scanner: visited marks are epoch stamps, so one scanner serves
+/// many declarations without clearing, and nothing is allocated per node.
+pub struct ConstScan {
+    stamp: Vec<u32>,
+    epoch: u32,
+    stack: Vec<ExprId>,
+    ids: Vec<margin_canon::NameId>,
+}
+
+impl ConstScan {
+    pub fn new(arena: &Arena) -> Self {
+        Self { stamp: vec![0; arena.len()], epoch: 0, stack: Vec::new(), ids: Vec::new() }
+    }
+
+    /// The constants referenced from `roots` (with `Nat` / `String` for literals).
+    pub fn scan(&mut self, arena: &Arena, roots: &[ExprId]) -> alloc::collections::BTreeSet<Name> {
+        if self.stamp.len() < arena.len() {
+            self.stamp.resize(arena.len(), 0);
         }
-        let node = arena.get(id);
-        match node {
-            ExprNode::Const(n, _) | ExprNode::Proj(n, _, _) => {
-                ids.insert(*n);
+        self.epoch += 1;
+        let epoch = self.epoch;
+        self.ids.clear();
+        let (mut nat, mut string) = (false, false);
+        self.stack.clear();
+        self.stack.extend_from_slice(roots);
+        while let Some(id) = self.stack.pop() {
+            let mark = &mut self.stamp[id.0 as usize];
+            if *mark == epoch {
+                continue;
             }
-            ExprNode::NatLit(_) => nat = true,
-            ExprNode::StrLit(_) => string = true,
-            _ => {}
+            *mark = epoch;
+            let node = arena.get(id);
+            match node {
+                ExprNode::Const(n, _) | ExprNode::Proj(n, _, _) => self.ids.push(*n),
+                ExprNode::NatLit(_) => nat = true,
+                ExprNode::StrLit(_) => string = true,
+                _ => {}
+            }
+            self.stack.extend(node.children());
         }
-        stack.extend(node.children());
+        self.ids.sort_unstable();
+        self.ids.dedup();
+        let mut out: alloc::collections::BTreeSet<Name> = self.ids.iter().map(|&n| arena.name(n).clone()).collect();
+        if nat {
+            out.insert(Name::from_dotted("Nat"));
+        }
+        if string {
+            out.insert(Name::from_dotted("String"));
+        }
+        out
     }
-    let mut out: alloc::collections::BTreeSet<Name> = ids.into_iter().map(|n| arena.name(n).clone()).collect();
-    if nat {
-        out.insert(Name::from_dotted("Nat"));
-    }
-    if string {
-        out.insert(Name::from_dotted("String"));
-    }
-    out
 }
 
 /// A trusted environment with its Merkle tree.

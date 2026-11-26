@@ -303,7 +303,7 @@ impl<'s, 'a> Emitter<'s, 'a> {
             let node: &'a ExprNode = arena.get(id);
             if !expanded {
                 stack.push((id, true));
-                for c in node.children().into_iter().rev() {
+                for c in node.children().as_slice().iter().copied().rev() {
                     stack.push((c, false));
                 }
                 continue;

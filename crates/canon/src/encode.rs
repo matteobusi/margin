@@ -21,7 +21,7 @@ fn build_table(arena: &Arena, roots: &[ExprId]) -> (Vec<ExprId>, BTreeMap<ExprId
                 table.push(id);
             } else {
                 stack.push((id, true));
-                for c in arena.get(id).children().into_iter().rev() {
+                for c in arena.get(id).children().as_slice().iter().copied().rev() {
                     if !local.contains_key(&c) {
                         stack.push((c, false));
                     }
