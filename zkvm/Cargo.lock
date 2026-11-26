@@ -2664,6 +2664,7 @@ dependencies = [
 name = "margin-checker"
 version = "0.0.1"
 dependencies = [
+ "hashbrown 0.15.5",
  "margin-canon",
  "margin-journal",
 ]

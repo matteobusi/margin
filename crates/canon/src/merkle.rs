@@ -9,21 +9,11 @@ use sha2::{Digest, Sha256};
 /// (equal to `full_hash` for everything except theorems); `axioms_hash` commits to
 /// the axioms the declaration depends on, transitively.
 pub fn leaf_hash(name_hash: &Hash32, header_hash: &Hash32, full_hash: &Hash32, axioms_hash: &Hash32) -> Hash32 {
-    let mut h = Sha256::new();
-    h.update([0x00]);
-    h.update(name_hash);
-    h.update(header_hash);
-    h.update(full_hash);
-    h.update(axioms_hash);
-    h.finalize().into()
+    crate::hash::sha256_small(&[&[0x00], name_hash, header_hash, full_hash, axioms_hash])
 }
 
 pub fn node_hash(l: &Hash32, r: &Hash32) -> Hash32 {
-    let mut h = Sha256::new();
-    h.update([0x01]);
-    h.update(l);
-    h.update(r);
-    h.finalize().into()
+    crate::hash::sha256_small(&[&[0x01], l, r])
 }
 
 fn split(n: usize) -> usize {

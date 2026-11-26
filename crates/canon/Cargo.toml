@@ -13,6 +13,6 @@ std = []
 lean4export = ["std", "dep:serde_json"]
 
 [dependencies]
-sha2.workspace = true
+sha2 = { workspace = true, features = ["compress"] }
 hashbrown = { version = "0.15", default-features = false }
 serde_json = { workspace = true, optional = true }

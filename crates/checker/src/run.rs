@@ -54,11 +54,14 @@ pub enum Origin {
     User,
 }
 
-struct Entry {
+type NameMap<V> = hashbrown::HashMap<Name, V, core::hash::BuildHasherDefault<margin_canon::fxhash::FxHasher>>;
+
+struct Entry<'i> {
     decl: Decl,
     origin: Origin,
-    /// Transitive axiom set: committed (environment, modules) or computed (user).
-    axioms: Vec<Name>,
+    /// Transitive axiom set: committed (environment, modules; borrowed from the input)
+    /// or computed (user).
+    axioms: alloc::borrow::Cow<'i, [Name]>,
 }
 
 /// What a run commits.
@@ -161,9 +164,11 @@ pub fn run_profiled<K: Kernel>(
         + input.user_decls.iter().map(Vec::len).sum::<usize>();
     let mut arena = Arena::with_capacity(input_bytes / 16);
     let mut entries: Vec<Entry> = Vec::new();
-    let mut by_name: BTreeMap<Name, usize> = BTreeMap::new();
+    // Constant name -> entry. Hashed: a B-tree compares names part by part.
+    let mut by_name: NameMap<usize> = NameMap::default();
+    by_name.reserve(input.env_decls.len() + input.user_decls.len());
 
-    let register = |by_name: &mut BTreeMap<Name, usize>, d: &Decl, idx: usize| {
+    let register = |by_name: &mut NameMap<usize>, d: &Decl, idx: usize| {
         for n in d.defined_names() {
             if by_name.insert(n.clone(), idx).is_some() {
                 return Err(CheckError::DuplicateName(n));
@@ -179,7 +184,7 @@ pub fn run_profiled<K: Kernel>(
     verify_openings(&input.env_proof, &leaves, &input.env_root, decoded.first().map(|(d, _)| d))?;
     for ((decl, _), e) in decoded.into_iter().zip(&input.env_decls) {
         register(&mut by_name, &decl, entries.len())?;
-        entries.push(Entry { decl, origin: Origin::Env, axioms: e.axioms.clone() });
+        entries.push(Entry { decl, origin: Origin::Env, axioms: e.axioms.as_slice().into() });
     }
     mark("run: verified env inclusion");
 
@@ -202,7 +207,7 @@ pub fn run_profiled<K: Kernel>(
         for ((decl, header_only), e) in decoded.into_iter().zip(&dep.entries) {
             register(&mut by_name, &decl, entries.len())?;
             let origin = if header_only { Origin::DepHeader } else { Origin::Dep };
-            entries.push(Entry { decl, origin, axioms: e.axioms.clone() });
+            entries.push(Entry { decl, origin, axioms: e.axioms.as_slice().into() });
         }
         dep_roots.push(j.iface_root);
     }
@@ -229,7 +234,7 @@ pub fn run_profiled<K: Kernel>(
             }
         }
         register(&mut by_name, &decl, entries.len())?;
-        entries.push(Entry { decl, origin: Origin::User, axioms: Vec::new() });
+        entries.push(Entry { decl, origin: Origin::User, axioms: alloc::borrow::Cow::Owned(Vec::new()) });
     }
     mark("run: user decls decoded + policy");
 
@@ -254,9 +259,9 @@ pub fn run_profiled<K: Kernel>(
         }
         set.sort();
         set.dedup();
-        entries[i].axioms = set;
+        entries[i].axioms = alloc::borrow::Cow::Owned(set);
     }
-    let user_axioms: Vec<Vec<Name>> = entries[first_user..].iter().map(|e| e.axioms.clone()).collect();
+    let user_axioms: Vec<Vec<Name>> = entries[first_user..].iter().map(|e| e.axioms.to_vec()).collect();
 
     // 6a. Module mode: commit the interface of the user declarations.
     if input.claimed.is_empty() {
@@ -283,7 +288,7 @@ pub fn run_profiled<K: Kernel>(
 
     let mut axioms_used: BTreeSet<Name> = BTreeSet::new();
     for claim in &input.claimed {
-        for a in &entries[by_name[claim]].axioms {
+        for a in entries[by_name[claim]].axioms.iter() {
             if forbidden.contains(a) {
                 return Err(CheckError::Forbidden { claim: claim.clone(), constant: a.clone() });
             }

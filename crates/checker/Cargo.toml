@@ -16,3 +16,4 @@ unsound-skip-typecheck = []
 [dependencies]
 margin-canon.workspace = true
 margin-journal.workspace = true
+hashbrown = { version = "0.15", default-features = false }
