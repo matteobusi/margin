@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "title": "Infinitely many primes (Mathlib)",
+    "description": "For every n there is a prime p ≥ n. Environment: Mathlib 5d3d31c. The proof and a private helper lemma stay hidden. Owner key set; an authorship claim is included.",
+    "receipt": "infinitely_many_primes.receipt",
+    "statement": "infinitely_many_primes.statement.lean",
+    "claims": ["infinitely_many_primes"],
+    "authorship": "infinitely_many_primes.claim.json"
+  },
+  {
+    "title": "double (a + b) = double (b + a) (core Lean)",
+    "description": "A small core-Lean theorem about a public definition `double`. Environment: Lean v4.36.0 Init. Anonymous receipt (no owner key).",
+    "receipt": "double_comm.receipt",
+    "statement": "double_comm.statement.lean",
+    "claims": ["double_comm"]
+  }
+]
