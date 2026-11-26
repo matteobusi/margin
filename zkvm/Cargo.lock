@@ -2713,6 +2713,7 @@ dependencies = [
  "margin-checker",
  "nanoda_lib",
  "num-bigint 0.5.1",
+ "rustc-hash 1.1.0",
  "serde_json",
 ]
 

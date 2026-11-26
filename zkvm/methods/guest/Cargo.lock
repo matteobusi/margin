@@ -802,6 +802,7 @@ dependencies = [
  "margin-checker",
  "nanoda_lib",
  "num-bigint 0.5.1",
+ "rustc-hash",
  "serde_json",
 ]
 

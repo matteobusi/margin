@@ -6,8 +6,9 @@
 //! exactly as for a file; only the JSON text step is skipped.
 //! Only the user declarations are type-checked; the environment is trusted.
 
-use margin_canon::lean4export::{export_records, ExportError, ExprRec, Record};
-use margin_canon::{Arena, BinderInfo, Decl, Hints, QuotKind, Safety};
+use margin_canon::lean4export::{CtorRec, ExportError, ExprRec, IndRec, RecRec, Record, RuleRec};
+use margin_canon::{Arena, BinderInfo, Decl, ExprId, ExprNode, Hints, LevelId, LevelNode, Name, NameId, NamePart, QuotKind, Safety};
+use rustc_hash::FxHashMap as HashMap;
 use nanoda_lib::env::ReducibilityHint;
 use nanoda_lib::expr::BinderStyle;
 use nanoda_lib::parser::{
@@ -81,11 +82,7 @@ impl Kernel for NanodaKernel {
                 .map_err(|e| e.to_string())?;
             // Every record comes from the arena: its sizes bound nanoda's tables.
             parser.reserve(arena.name_count(), arena.level_count(), arena.len(), env_len + user_len);
-            let mut feed = |r: Record| -> Result<(), ExportError> {
-                let obj = to_nanoda(r)?;
-                parser.add_record(obj, "").map_err(|e| ExportError(e.to_string()))
-            };
-            export_records(arena, &all, &mut feed).map_err(|e| e.to_string())?;
+            feed_arena(&mut parser, arena, &all)?;
             self.mark("kernel: records fed to nanoda");
             let (export, skipped) = parser.finish().map_err(|e| e.to_string())?;
             self.mark("kernel: nanoda parsed");
@@ -130,6 +127,175 @@ impl Kernel for NanodaKernel {
             Err(p) => Err(KernelError(panic_message(&p))),
         }
     }
+}
+
+/// Hand nanoda every name, level and term of the arena, in arena order, then the
+/// declarations. The arena holds each distinct term once (hash-consed, binder names and
+/// info erased as in nanoda's view), so arena position k becomes nanoda position k; the
+/// records carry that position and nanoda's parser checks it (continuity), so a mismatch
+/// fails loudly. Names are split into nanoda's prefix chains.
+fn feed_arena<'x>(parser: &mut Parser<'_, std::io::Empty>, arena: &'x Arena, decls: &[&'x Decl]) -> Result<(), String> {
+    use ExportJsonVal as V;
+    let add = |parser: &mut Parser<'_, std::io::Empty>, val: V<'_>, i: BackRef| {
+        parser.add_record(ExportJsonObject { val, i: Some(i) }, "").map_err(|e| e.to_string())
+    };
+    // Names: (prefix, component) -> nanoda index; the anonymous name is 0.
+    let mut chain: HashMap<(u32, &'x NamePart), u32> = HashMap::default();
+    let mut n_names = 1u32;
+    let mut name_id = |parser: &mut Parser<'_, std::io::Empty>, n: &'x Name| -> Result<u32, String> {
+        let mut pre = 0u32;
+        for part in &n.0 {
+            if let Some(&k) = chain.get(&(pre, part)) {
+                pre = k;
+                continue;
+            }
+            let idx = n_names;
+            n_names += 1;
+            let val = match part {
+                NamePart::Str(st) => V::NameStr { pre, str: Cow::Borrowed(st.as_str()) },
+                NamePart::Num(k) => V::NameNum { pre, i: u32::try_from(*k).map_err(|_| "name component too large")? },
+            };
+            add(parser, val, BackRef::In(idx))?;
+            chain.insert((pre, part), idx);
+            pre = idx;
+        }
+        Ok(pre)
+    };
+    let mut name_ids = Vec::with_capacity(arena.name_count());
+    for k in 0..arena.name_count() {
+        name_ids.push(name_id(parser, arena.name(NameId(k as u32)))?);
+    }
+    for k in 1..arena.level_count() {
+        let val = match arena.level_node(LevelId(k as u32)) {
+            LevelNode::Zero => return Err("level zero must be unique".into()),
+            LevelNode::Succ(a) => V::LevelSucc(a.0),
+            LevelNode::Max(a, b) => V::LevelMax([a.0, b.0]),
+            LevelNode::IMax(a, b) => V::LevelIMax([a.0, b.0]),
+            LevelNode::Param(n) => V::LevelParam(name_ids[n.0 as usize]),
+        };
+        add(parser, val, BackRef::Il(k as u32))?;
+    }
+    for k in 0..arena.len() {
+        let val = match arena.get(ExprId(k as u32)) {
+            ExprNode::BVar(i) => V::ExprBVar(u16::try_from(*i).map_err(|_| "bound variable index exceeds u16")?),
+            ExprNode::Sort(l) => V::ExprSort(l.0),
+            ExprNode::Const(n, ls) => {
+                V::ExprConst { name: name_ids[n.0 as usize], levels: arena.levels(*ls).iter().map(|l| l.0).collect() }
+            }
+            ExprNode::App(f, a) => V::ExprApp { fun: f.0, arg: a.0 },
+            ExprNode::Lam(t, b) => {
+                V::ExprLambda { binder_name: 0, binder_type: t.0, body: b.0, binder_info: BinderStyle::Default }
+            }
+            ExprNode::Pi(t, b) => V::ExprPi { binder_name: 0, binder_type: t.0, body: b.0, binder_info: BinderStyle::Default },
+            ExprNode::Let(t, v, b, nondep) => V::ExprLet { name: 0, ty: t.0, value: v.0, body: b.0, nondep: *nondep },
+            ExprNode::NatLit(b) => V::NatLit(num_bigint::BigUint::from_bytes_be(b)),
+            ExprNode::StrLit(st) => V::StrLit(Cow::Borrowed(st)),
+            ExprNode::Proj(n, idx, x) => V::ExprProj {
+                type_name: name_ids[n.0 as usize],
+                idx: usize::try_from(*idx).map_err(|_| "projection index too large")?,
+                structure: x.0,
+            },
+        };
+        add(parser, val, BackRef::Ie(k as u32))?;
+    }
+    // Declarations: the same records as the lean4export emitter produces.
+    let mut ids = |parser: &mut Parser<'_, std::io::Empty>, ns: &'x [Name]| -> Result<Vec<u32>, String> {
+        ns.iter().map(|n| name_id(parser, n)).collect()
+    };
+    for &d in decls {
+        let e = |x: &ExprId| x.0;
+        let rec = match d {
+            Decl::Axiom { name, lparams, ty, is_unsafe } => Record::Axiom {
+                name: ids(parser, core::slice::from_ref(name))?[0],
+                lparams: ids(parser, lparams)?,
+                ty: e(ty),
+                is_unsafe: *is_unsafe,
+            },
+            Decl::Definition { name, lparams, ty, val, hints, safety } => Record::Def {
+                name: ids(parser, core::slice::from_ref(name))?[0],
+                lparams: ids(parser, lparams)?,
+                ty: e(ty),
+                val: e(val),
+                hints: *hints,
+                safety: *safety,
+            },
+            Decl::Theorem { name, lparams, ty, val } => Record::Thm {
+                name: ids(parser, core::slice::from_ref(name))?[0],
+                lparams: ids(parser, lparams)?,
+                ty: e(ty),
+                val: e(val),
+            },
+            Decl::Opaque { name, lparams, ty, val, is_unsafe } => Record::Opaque {
+                name: ids(parser, core::slice::from_ref(name))?[0],
+                lparams: ids(parser, lparams)?,
+                ty: e(ty),
+                val: e(val),
+                is_unsafe: *is_unsafe,
+            },
+            Decl::Quot { name, lparams, ty, kind } => Record::Quot {
+                name: ids(parser, core::slice::from_ref(name))?[0],
+                lparams: ids(parser, lparams)?,
+                ty: e(ty),
+                kind: *kind,
+            },
+            Decl::Statement { .. } => return Err("statements cannot be checked".into()),
+            Decl::Inductive(b) => {
+                let mut types = Vec::with_capacity(b.types.len());
+                for t in &b.types {
+                    types.push(IndRec {
+                        name: ids(parser, core::slice::from_ref(&t.name))?[0],
+                        lparams: ids(parser, &t.lparams)?,
+                        ty: e(&t.ty),
+                        all: ids(parser, &t.all)?,
+                        ctors: ids(parser, &t.ctors)?,
+                        is_rec: t.is_rec,
+                        is_reflexive: t.is_reflexive,
+                        is_unsafe: t.is_unsafe,
+                        num_params: t.num_params,
+                        num_indices: t.num_indices,
+                        num_nested: t.num_nested,
+                    });
+                }
+                let mut ctors = Vec::with_capacity(b.ctors.len());
+                for c in &b.ctors {
+                    ctors.push(CtorRec {
+                        name: ids(parser, core::slice::from_ref(&c.name))?[0],
+                        lparams: ids(parser, &c.lparams)?,
+                        ty: e(&c.ty),
+                        is_unsafe: c.is_unsafe,
+                        induct: ids(parser, core::slice::from_ref(&c.induct))?[0],
+                        cidx: c.cidx,
+                        num_params: c.num_params,
+                        num_fields: c.num_fields,
+                    });
+                }
+                let mut recs = Vec::with_capacity(b.recs.len());
+                for r in &b.recs {
+                    let mut rules = Vec::with_capacity(r.rules.len());
+                    for x in &r.rules {
+                        rules.push(RuleRec { ctor: ids(parser, core::slice::from_ref(&x.ctor))?[0], nfields: x.nfields, rhs: e(&x.rhs) });
+                    }
+                    recs.push(RecRec {
+                        name: ids(parser, core::slice::from_ref(&r.name))?[0],
+                        lparams: ids(parser, &r.lparams)?,
+                        ty: e(&r.ty),
+                        is_unsafe: r.is_unsafe,
+                        all: ids(parser, &r.all)?,
+                        num_params: r.num_params,
+                        num_indices: r.num_indices,
+                        num_motives: r.num_motives,
+                        num_minors: r.num_minors,
+                        rules,
+                        k: r.k,
+                    });
+                }
+                Record::Inductive { types, ctors, recs }
+            }
+        };
+        let obj = to_nanoda(rec).map_err(|e| e.to_string())?;
+        parser.add_record(obj, "").map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
