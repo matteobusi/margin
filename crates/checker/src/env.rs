@@ -19,8 +19,10 @@ use margin_canon::{axioms_hash, decl_hash, encode_decl, name_hash, Arena, Decl, 
 /// How one environment declaration is revealed to the guest.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Opening {
-    /// The full canonical bytes.
-    Full(Vec<u8>),
+    /// The full canonical bytes, plus the hash of the declaration's header (`decl_hash` of
+    /// its statement form, or of the full bytes if it has none). The leaf binds the
+    /// header hash, so the guest takes it as given instead of re-encoding the statement.
+    Full { bytes: Vec<u8>, header_hash: Hash32 },
     /// A theorem without its proof: CE bytes of its `Statement` form, plus the hash of
     /// the full declaration (needed to recompute the leaf).
     Header { header: Vec<u8>, full_hash: Hash32 },
@@ -36,9 +38,10 @@ pub struct EnvEntry {
 impl EnvEntry {
     pub fn encode(&self, w: &mut Writer) {
         match &self.opening {
-            Opening::Full(b) => {
+            Opening::Full { bytes, header_hash } => {
                 w.u8(0);
-                w.bytes(b);
+                w.bytes(bytes);
+                w.raw(header_hash);
             }
             Opening::Header { header, full_hash } => {
                 w.u8(1);
@@ -51,7 +54,7 @@ impl EnvEntry {
 
     pub fn decode(r: &mut Reader) -> Result<Self, Error> {
         let opening = match r.u8()? {
-            0 => Opening::Full(r.bytes()?.to_vec()),
+            0 => Opening::Full { bytes: r.bytes()?.to_vec(), header_hash: r.array32()? },
             1 => Opening::Header { header: r.bytes()?.to_vec(), full_hash: r.array32()? },
             t => return Err(Error::BadTag(t)),
         };
@@ -243,7 +246,9 @@ impl Env {
                     let h = header_of(&self.decls[i]).expect("theorem");
                     Opening::Header { header: encode_decl(arena, &h), full_hash: decl_hash(&self.bytes[i]) }
                 } else {
-                    Opening::Full(self.bytes[i].clone())
+                    let header_hash = header_of(&self.decls[i])
+                        .map_or_else(|| decl_hash(&self.bytes[i]), |h| decl_hash(&encode_decl(arena, &h)));
+                    Opening::Full { bytes: self.bytes[i].clone(), header_hash }
                 },
                 axioms: self.axioms[i].clone(),
             })

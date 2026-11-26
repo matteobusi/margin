@@ -329,7 +329,7 @@ pub fn prepare_job(lib: &Library, arena: &Arena, job: &Job, mode: OpenMode) -> R
         .iter()
         .filter_map(|&i| {
             let bytes = match &opened.get(i)?.opening {
-                margin_checker::Opening::Full(b) => b,
+                margin_checker::Opening::Full { bytes, .. } => bytes,
                 margin_checker::Opening::Header { header, .. } => header,
             };
             let mut a = Arena::new();

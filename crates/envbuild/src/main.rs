@@ -107,6 +107,13 @@ fn main() -> ExitCode {
             println!("{}", match_journal(&journal, &env, &mut arena, stmt, &claims_of(claims))?);
             Ok(())
         })(),
+        ["upgrade-input", inp, out] => (|| {
+            let b = std::fs::read(inp).map_err(|e| format!("{inp}: {e}"))?;
+            let up = upgrade_inp4(&b).map_err(|e| format!("{inp}: {e}"))?;
+            std::fs::write(out, up.encode()).map_err(|e| format!("{out}: {e}"))?;
+            eprintln!("upgraded {inp} (INP4) -> {out} (INP5)");
+            Ok(())
+        })(),
         _ => Err("usage: see the header of crates/envbuild/src/main.rs".into()),
     };
     match res {
@@ -116,4 +123,51 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Read an INP4 prover input (full openings without header hash) and recompute the
+/// header hashes: the INP5 equivalent.
+fn upgrade_inp4(b: &[u8]) -> Result<margin_checker::ProverInput, margin_canon::wire::Error> {
+    use margin_canon::wire::{Error, Reader};
+    use margin_checker::{DepOpening, EnvEntry, Opening};
+    let mut r = Reader::new(b);
+    if r.raw(4)? != b"INP4" {
+        return Err(Error::BadMagic);
+    }
+    let entry = |r: &mut Reader| -> Result<EnvEntry, Error> {
+        let opening = match r.u8()? {
+            0 => {
+                let bytes = r.bytes()?.to_vec();
+                let mut a = Arena::new();
+                let d = margin_canon::decode_decl_trusted(&bytes, &mut a)?;
+                let header_hash = margin_checker::env::header_of(&d)
+                    .map_or_else(|| margin_canon::decl_hash(&bytes), |h| margin_canon::decl_hash(&margin_canon::encode_decl(&a, &h)));
+                Opening::Full { bytes, header_hash }
+            }
+            1 => Opening::Header { header: r.bytes()?.to_vec(), full_hash: r.array32()? },
+            t => return Err(Error::BadTag(t)),
+        };
+        Ok(EnvEntry { opening, axioms: r.names()? })
+    };
+    let env_root = r.array32()?;
+    let owner = r.array32()?;
+    let self_id = r.array32()?;
+    let module = r.name()?;
+    let claimed = r.names()?;
+    let n = r.count()?;
+    let env_decls = (0..n).map(|_| entry(&mut r)).collect::<Result<_, _>>()?;
+    let env_proof = margin_canon::merkle::MultiProof::decode(&mut r)?;
+    let n = r.count()?;
+    let mut deps = Vec::with_capacity(n);
+    for _ in 0..n {
+        let journal = r.bytes()?.to_vec();
+        let k = r.count()?;
+        let entries = (0..k).map(|_| entry(&mut r)).collect::<Result<_, _>>()?;
+        let proof = margin_canon::merkle::MultiProof::decode(&mut r)?;
+        deps.push(DepOpening { journal, entries, proof });
+    }
+    let n = r.count()?;
+    let user_decls = (0..n).map(|_| r.bytes().map(<[u8]>::to_vec)).collect::<Result<_, _>>()?;
+    r.finish()?;
+    Ok(margin_checker::ProverInput { env_root, owner, self_id, module, claimed, env_decls, env_proof, deps, user_decls })
 }

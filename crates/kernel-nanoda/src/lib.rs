@@ -59,9 +59,9 @@ impl Kernel for NanodaKernel {
         NAME
     }
 
-    fn check(&mut self, arena: &Arena, env: &[Decl], user: &[Decl]) -> Result<(), KernelError> {
+    fn check(&mut self, arena: &Arena, env: &[&Decl], user: &[&Decl]) -> Result<(), KernelError> {
         self.mark("kernel: start");
-        let all: Vec<&Decl> = env.iter().chain(user).collect();
+        let all: Vec<&Decl> = env.iter().chain(user).copied().collect();
         // nanoda flattens an inductive block into types, constructors and recursors,
         // in the same order as `Decl::defined_names`.
         let env_len: usize = env.iter().map(|d| d.defined_names().len()).sum();
@@ -79,6 +79,8 @@ impl Kernel for NanodaKernel {
             parser
                 .add_record(ExportJsonObject { val: ExportJsonVal::Metadata(meta), i: None }, "meta")
                 .map_err(|e| e.to_string())?;
+            // Every record comes from the arena: its sizes bound nanoda's tables.
+            parser.reserve(arena.name_count(), arena.level_count(), arena.len(), env_len + user_len);
             let mut feed = |r: Record| -> Result<(), ExportError> {
                 let obj = to_nanoda(r)?;
                 parser.add_record(obj, "").map_err(|e| ExportError(e.to_string()))

@@ -18,7 +18,7 @@ pub trait Kernel {
     /// Type-check the `user` declarations, in order, in an environment that already
     /// contains the `env` declarations. `env` is trusted (its integrity comes from
     /// `env_root`) and must not be re-checked.
-    fn check(&mut self, arena: &Arena, env: &[Decl], user: &[Decl]) -> Result<(), KernelError>;
+    fn check(&mut self, arena: &Arena, env: &[&Decl], user: &[&Decl]) -> Result<(), KernelError>;
 }
 
 /// DANGER: accepts every declaration. Pipeline tests only.
@@ -31,7 +31,7 @@ impl Kernel for UncheckedKernel {
     fn name(&self) -> &str {
         "UNSOUND-unchecked"
     }
-    fn check(&mut self, _: &Arena, _: &[Decl], _: &[Decl]) -> Result<(), KernelError> {
+    fn check(&mut self, _: &Arena, _: &[&Decl], _: &[&Decl]) -> Result<(), KernelError> {
         Ok(())
     }
 }

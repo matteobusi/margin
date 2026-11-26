@@ -474,6 +474,15 @@ impl<'a, R: BufRead> Parser<'a, R> {
         }
     }
     
+    /// Reserve table capacity ahead of `add_record` calls (Margin patch: sizing only).
+    /// Growing hash tables one rehash at a time is expensive in the zkVM.
+    pub fn reserve(&mut self, names: usize, levels: usize, exprs: usize, declars: usize) {
+        self.dag.names.reserve(names);
+        self.dag.levels.reserve(levels);
+        self.dag.exprs.reserve(exprs);
+        self.declars.reserve(declars);
+    }
+
     fn axiom_permitted(&self, n: NamePtr<'a>) -> bool {
         self.config.unsafe_permit_all_axioms ||
             self.config.permitted_axioms.as_ref().map(|v| v.contains(&self.name_to_string(n))).unwrap_or(false)

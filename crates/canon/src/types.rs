@@ -162,6 +162,12 @@ impl<T> Default for Interner<T> {
 }
 
 impl<T: Hash + Eq> Interner<T> {
+    fn reserve(&mut self, n: usize) {
+        self.items.reserve(n);
+        let items = &self.items;
+        self.index.reserve(n, |&j| fx(&items[j as usize]));
+    }
+
     fn get_or_insert(&mut self, value: T) -> u32 {
         let h = fx(&value);
         let items = &self.items;
@@ -208,6 +214,18 @@ impl Default for Arena {
 impl Arena {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// An arena with room for about `nodes` term nodes (and proportionally many names and
+    /// levels), so that decoding does not rehash its tables over and over.
+    pub fn with_capacity(nodes: usize) -> Self {
+        let mut a = Self::default();
+        a.nodes.reserve(nodes);
+        a.names.reserve(nodes / 8);
+        a.levels.reserve(nodes / 32);
+        a.lists.reserve(nodes / 32);
+        a.raw_names.reserve(nodes / 8, |(b, _)| fx(&**b));
+        a
     }
 
     /// Add a node (or find the existing equal node).

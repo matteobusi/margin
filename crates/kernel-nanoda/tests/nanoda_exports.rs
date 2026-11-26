@@ -1,5 +1,10 @@
 //! Tests on real lean4export files shipped with nanoda (`third_party/nanoda_lib/test_resources`).
 
+/// References to declarations, as the kernel takes them.
+fn r(d: &[Decl]) -> Vec<&Decl> {
+    d.iter().collect()
+}
+
 use margin_canon::lean4export::read_ndjson;
 use margin_canon::{decode_decl, encode_decl, Arena, Decl};
 use margin_checker::Kernel;
@@ -29,20 +34,20 @@ fn ce_roundtrip_of_real_export() {
 fn accepts_valid_inductives() {
     // PUnit and `Wrap : Prop` (one field) are well-formed inductive types.
     let (arena, decls) = load("ProjFromProp");
-    NanodaKernel::default().check(&arena, &[], &decls[..2]).unwrap();
+    NanodaKernel::default().check(&arena, &[], &r(&decls[..2])).unwrap();
 }
 
 #[test]
 fn accepts_valid_inductive_from_trusted_env() {
     let (arena, decls) = load("ProjFromProp");
-    NanodaKernel::default().check(&arena, &decls[..1], &decls[1..2]).unwrap();
+    NanodaKernel::default().check(&arena, &r(&decls[..1]), &r(&decls[1..2])).unwrap();
 }
 
 #[test]
 fn rejects_projection_out_of_prop() {
     // The definitions project data out of a proof: the kernel must reject them.
     let (arena, decls) = load("ProjFromProp");
-    let err = NanodaKernel::default().check(&arena, &decls[..2], &decls[2..]).unwrap_err();
+    let err = NanodaKernel::default().check(&arena, &r(&decls[..2]), &r(&decls[2..])).unwrap_err();
     assert!(err.0.contains("infer_proj prop"), "{}", err.0);
 }
 
@@ -50,7 +55,7 @@ fn rejects_projection_out_of_prop() {
 fn rejects_missing_dependency() {
     // Without the inductive types in scope, the definitions cannot check.
     let (arena, decls) = load("ProjFromProp");
-    assert!(NanodaKernel::default().check(&arena, &[], &decls[2..3]).is_err());
+    assert!(NanodaKernel::default().check(&arena, &[], &r(&decls[2..3])).is_err());
 }
 
 #[test]
@@ -61,7 +66,7 @@ fn rejects_tampered_recursor_rule() {
     let Decl::Inductive(b) = &mut wrap else { panic!("expected inductive") };
     let bogus = arena.sort(margin_canon::Level::Zero);
     b.recs[0].rules[0].rhs = bogus;
-    assert!(NanodaKernel::default().check(&arena, &decls[..1], &[wrap]).is_err());
+    assert!(NanodaKernel::default().check(&arena, &r(&decls[..1]), &[&wrap]).is_err());
 }
 
 mod pipeline {
@@ -151,7 +156,7 @@ fn json_text_path_matches_direct_records() {
     }
     let bad = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| export.check_declar(vals[6])));
     assert!(bad.is_err());
-    assert!(NanodaKernel::default().check(&arena, &decls[..2], &decls[2..]).is_err());
+    assert!(NanodaKernel::default().check(&arena, &r(&decls[..2]), &r(&decls[2..])).is_err());
 }
 
 mod robustness {

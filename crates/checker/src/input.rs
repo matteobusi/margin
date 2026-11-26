@@ -4,7 +4,7 @@ use margin_canon::merkle::MultiProof;
 use margin_canon::wire::{Error, Reader, Writer};
 use margin_canon::{Hash32, Name};
 
-const MAGIC: &[u8; 4] = b"INP4";
+const MAGIC: &[u8; 4] = b"INP5";
 
 /// Declarations opened from an assumed module receipt.
 #[derive(Clone, Debug, PartialEq, Eq)]

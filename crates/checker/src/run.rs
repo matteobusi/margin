@@ -114,12 +114,8 @@ fn open_entries(entries: &[EnvEntry], arena: &mut Arena) -> Result<Opened, Check
     let mut decoded = Vec::with_capacity(entries.len());
     for e in entries {
         let (decl, header_hash, full_hash, header_only) = match &e.opening {
-            Opening::Full(bytes) => {
-                let d = decode_decl_trusted(bytes, arena)?;
-                let full_hash = decl_hash(bytes);
-                let header_hash = crate::env::header_of(&d).map_or(full_hash, |h| decl_hash(&encode_decl(arena, &h)));
-                (d, header_hash, full_hash, false)
-            }
+            // The leaf binds the header hash, so it is taken as given (no re-encoding).
+            Opening::Full { bytes, header_hash } => (decode_decl_trusted(bytes, arena)?, *header_hash, decl_hash(bytes), false),
             Opening::Header { header, full_hash } => {
                 let Decl::Statement { name, lparams, ty } = decode_decl_trusted(header, arena)? else {
                     return Err(CheckError::BadHeader);
@@ -158,7 +154,12 @@ pub fn run_profiled<K: Kernel>(
     mark: &dyn Fn(&str),
     verify_dep: &mut dyn FnMut(&Hash32, &[u8]) -> bool,
 ) -> Result<RunResult, CheckError> {
-    let mut arena = Arena::new();
+    // Room for the terms of every declaration in the input (about one node per 16 bytes).
+    let input_bytes: usize = input.env_decls.iter().chain(input.deps.iter().flat_map(|d| d.entries.iter()))
+        .map(|e| match &e.opening { Opening::Full { bytes, .. } => bytes.len(), Opening::Header { header, .. } => header.len() })
+        .sum::<usize>()
+        + input.user_decls.iter().map(Vec::len).sum::<usize>();
+    let mut arena = Arena::with_capacity(input_bytes / 16);
     let mut entries: Vec<Entry> = Vec::new();
     let mut by_name: BTreeMap<Name, usize> = BTreeMap::new();
 
@@ -235,8 +236,8 @@ pub fn run_profiled<K: Kernel>(
     // 4. The kernel checks all user declarations, in order, against the environment and
     //    the assumed modules.
     {
-        let env: Vec<Decl> = entries[..first_user].iter().map(|e| e.decl.clone()).collect();
-        let user: Vec<Decl> = entries[first_user..].iter().map(|e| e.decl.clone()).collect();
+        let env: Vec<&Decl> = entries[..first_user].iter().map(|e| &e.decl).collect();
+        let user: Vec<&Decl> = entries[first_user..].iter().map(|e| &e.decl).collect();
         kernel.check(&arena, &env, &user).map_err(|e| CheckError::Kernel { msg: e.0 })?;
     }
 
@@ -376,7 +377,7 @@ mod tests {
         fn name(&self) -> &str {
             "test"
         }
-        fn check(&mut self, _: &Arena, _: &[Decl], _: &[Decl]) -> Result<(), KernelError> {
+        fn check(&mut self, _: &Arena, _: &[&Decl], _: &[&Decl]) -> Result<(), KernelError> {
             Ok(())
         }
     }
