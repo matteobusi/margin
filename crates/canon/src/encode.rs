@@ -236,10 +236,7 @@ fn read_level(r: &mut Reader, arena: &mut Arena, depth: usize) -> Result<LevelId
         1 => LevelNode::Succ(read_level(r, arena, depth + 1)?),
         2 => LevelNode::Max(read_level(r, arena, depth + 1)?, read_level(r, arena, depth + 1)?),
         3 => LevelNode::IMax(read_level(r, arena, depth + 1)?, read_level(r, arena, depth + 1)?),
-        4 => {
-            let n = r.name()?;
-            LevelNode::Param(arena.intern_name(&n))
-        }
+        4 => LevelNode::Param(arena.intern_name_raw(r.name_raw()?)?),
         t => return Err(Error::BadTag(t)),
     };
     Ok(arena.mk_level(node))
@@ -285,8 +282,7 @@ pub fn decode_decl_trusted(bytes: &[u8], arena: &mut Arena) -> Result<Decl, Erro
             0x00 => ExprNode::BVar(r.uvar()?),
             0x01 => ExprNode::Sort(read_level(&mut r, arena, 0)?),
             0x02 => {
-                let name = r.name()?;
-                let name = arena.intern_name(&name);
+                let name = arena.intern_name_raw(r.name_raw()?)?;
                 let k = r.count()?;
                 let ls = (0..k).map(|_| read_level(&mut r, arena, 0)).collect::<Result<Vec<_>, _>>()?;
                 ExprNode::Const(name, arena.intern_levels(&ls))
@@ -295,7 +291,7 @@ pub fn decode_decl_trusted(bytes: &[u8], arena: &mut Arena) -> Result<Decl, Erro
             tag @ (0x04 | 0x05) => {
                 // Binder name and info are read and dropped (the canonical form has
                 // the anonymous name and binder info 0; `decode_decl` enforces it).
-                let _ = r.name()?;
+                r.name_raw()?;
                 BinderInfo::from_u8(r.u8()?).ok_or(Error::BadTag(0xff))?;
                 let t = rf(&mut r, &map)?;
                 let b = rf(&mut r, &map)?;
@@ -306,7 +302,7 @@ pub fn decode_decl_trusted(bytes: &[u8], arena: &mut Arena) -> Result<Decl, Erro
                 }
             }
             0x06 => {
-                let _ = r.name()?;
+                r.name_raw()?;
                 let t = rf(&mut r, &map)?;
                 let v = rf(&mut r, &map)?;
                 let b = rf(&mut r, &map)?;
@@ -321,8 +317,7 @@ pub fn decode_decl_trusted(bytes: &[u8], arena: &mut Arena) -> Result<Decl, Erro
             }
             0x08 => ExprNode::StrLit(r.str()?.into()),
             0x09 => {
-                let name = r.name()?;
-                let name = arena.intern_name(&name);
+                let name = arena.intern_name_raw(r.name_raw()?)?;
                 let i = r.uvar()?;
                 ExprNode::Proj(name, i, rf(&mut r, &map)?)
             }

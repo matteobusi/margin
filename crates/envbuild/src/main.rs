@@ -4,7 +4,7 @@
 //! ```text
 //! margin-envbuild root    <env.ndjson|env.cache>
 //! margin-envbuild cache   <env.ndjson> <out.cache>
-//! margin-envbuild prepare [--open-theorems] [--owner HEX] <env> <project.ndjson> <input.bin> <claim>...
+//! margin-envbuild prepare [--reachable | --open-theorems] [--owner HEX] <env> <project.ndjson> <input.bin> <claim>...
 //! margin-envbuild check   <input.bin> [--journal-out journal.bin]
 //! margin-envbuild match   <receipt.bin> <checkers.json> <envs.json> <env> <statement.ndjson> <claim>...
 //! margin-envbuild match-journal <journal.bin> <env> <statement.ndjson> <claim>...
@@ -12,9 +12,10 @@
 //!
 //! `*.ndjson` files are lean4export (format 3.1) outputs. An environment is either a
 //! lean4export file of the trusted library (for example `lean4export Mathlib`) or a cache
-//! built from one with `cache`. By default, library theorems are opened by their
-//! statement only; if the kernel ever needs to unfold one, prepare with
-//! `--open-theorems`.
+//! built from one with `cache`. By default, `prepare` opens in full only the library
+//! declarations the kernel consults (found by a recorded native run) and everything else
+//! as a statement. `--reachable` opens everything reachable (theorems as statements);
+//! `--open-theorems` also opens theorems in full.
 
 use margin_canon::Arena;
 use margin_envbuild::*;
@@ -24,7 +25,11 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut flag = |f: &str| args.iter().position(|a| a == f).map(|p| args.remove(p)).is_some();
-    let open_theorems = flag("--open-theorems");
+    let mode = match (flag("--open-theorems"), flag("--reachable")) {
+        (true, _) => OpenMode::Reachable { open_theorems: true },
+        (false, true) => OpenMode::Reachable { open_theorems: false },
+        _ => OpenMode::Minimal,
+    };
     let owner = match args.iter().position(|a| a == "--owner") {
         Some(p) if p + 1 < args.len() => {
             let hexkey = args.remove(p + 1);
@@ -59,7 +64,7 @@ fn main() -> ExitCode {
             let env = load_any_env(env, &mut arena)?;
             let proj = read_export(proj, &mut arena)?;
             let user = split_user(&env, &arena, proj)?;
-            let p = prepare(&env, &arena, &user, &claims_of(claims), owner, open_theorems);
+            let p = prepare(&env, &arena, &user, &claims_of(claims), owner, mode)?;
             let bytes = p.input.encode();
             std::fs::write(out, &bytes).map_err(|e| format!("{out}: {e}"))?;
             eprintln!(

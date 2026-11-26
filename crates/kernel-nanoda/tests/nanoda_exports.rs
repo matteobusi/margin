@@ -80,9 +80,12 @@ mod pipeline {
         ProverInput {
             env_root: env_set.tree.root,
             owner: [7; 32],
+            self_id: [0; 32],
+            module: Name::from_dotted("Test"),
             claimed: vec![Name::from_dotted(claim)],
             env_decls,
         env_proof,
+            deps: vec![],
             user_decls: user.iter().map(|d| encode_decl(&arena, d)).collect(),
         }
     }
@@ -105,7 +108,7 @@ mod pipeline {
             },
             "main",
         );
-        let j = run(&inp, &mut NanodaKernel::default()).unwrap();
+        let j = run(&inp, &mut NanodaKernel::default()).unwrap().journal().unwrap();
         assert_eq!(j.checker, margin_kernel_nanoda::NAME);
         assert_eq!(j.claims.len(), 1);
         assert!(!j.encode().windows(6).any(|w| w == b"secret"));
@@ -205,9 +208,12 @@ mod robustness {
         ProverInput {
             env_root: env.tree.root,
             owner: [5; 32],
+            self_id: [0; 32],
+            module: margin_canon::Name::from_dotted("Test"),
             claimed: vec![margin_canon::Name::from_dotted("t")],
             env_decls,
             env_proof,
+            deps: vec![],
             user_decls: vec![encode_decl(&arena, &t)],
         }
         .encode()
@@ -231,9 +237,13 @@ mod robustness {
                         // Only the owner key is free-form; any other accepted change must
                         // leave the input semantically identical (same journal).
                         let orig = ProverInput::decode(&good).unwrap();
-                        let j1 = run(&orig, &mut NanodaKernel::default()).unwrap();
-                        let j2 = run(&inp, &mut NanodaKernel::default()).unwrap();
+                        let j1 = run(&orig, &mut NanodaKernel::default()).unwrap().journal().unwrap();
+                        let j2 = run(&inp, &mut NanodaKernel::default()).unwrap().journal().unwrap();
+                        // Free-form in claim mode without dependencies: the owner key
+                        // (journal), and the image ID and module name (unused).
                         inp.owner = orig.owner;
+                        inp.self_id = orig.self_id;
+                        inp.module = orig.module.clone();
                         let (mut a, mut b) = (j1.clone(), j2.clone());
                         a.owner = [0; 32];
                         b.owner = [0; 32];
@@ -271,6 +281,7 @@ mod robustness {
             claims: vec![encode_decl(&arena, &decls[0])],
             stmt_cone: vec![],
             axioms: vec![margin_canon::Name::from_dotted("propext")],
+            assumed_id: [0; 32],
         }
         .encode();
         for _ in 0..2000 {

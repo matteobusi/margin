@@ -14,8 +14,8 @@ pub mod policy;
 mod run;
 
 pub use env::{Env, EnvEntry, Opening};
-pub use input::ProverInput;
+pub use input::{DepOpening, ProverInput};
 pub use kernel::{Kernel, KernelError};
 #[cfg(feature = "unsound-skip-typecheck")]
 pub use kernel::UncheckedKernel;
-pub use run::{public_statement, run, run_profiled, CheckError};
+pub use run::{public_statement, run, run_profiled, CheckError, Origin, Output, RunResult};

@@ -30,13 +30,19 @@ fn main() {
     mark("decoded input");
 
     #[cfg(feature = "kernel-nanoda")]
-    let mut kernel = margin_kernel_nanoda::NanodaKernel { phase_hook: Some(mark) };
+    let mut kernel = margin_kernel_nanoda::NanodaKernel { phase_hook: Some(mark), ..Default::default() };
     #[cfg(feature = "unsound-skip-typecheck")]
     let mut kernel = margin_checker::UncheckedKernel;
 
+    // Assumed module receipts: `env::verify` records an assumption that the host must
+    // resolve with a real receipt of `image_id` and this journal, or proving fails.
+    let mut verify_dep = |image_id: &[u8; 32], journal: &[u8]| -> bool {
+        env::verify(risc0_zkvm::sha::Digest::from(*image_id), journal).is_ok()
+    };
     // A failed check panics: the prover gets no receipt.
-    let journal = run_profiled(&input, &mut kernel, &mark).expect("check failed");
+    let result = run_profiled(&input, &mut kernel, &mark, &mut verify_dep).expect("check failed");
     mark("checker done");
-    env::commit_slice(&journal.encode());
+    // Either the public journal (claims) or a module journal (module mode).
+    env::commit_slice(&result.output.encode());
     mark("committed");
 }

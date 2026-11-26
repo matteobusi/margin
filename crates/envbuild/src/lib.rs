@@ -6,7 +6,8 @@
 use margin_canon::lean4export::read_ndjson_from;
 use margin_canon::wire::{Reader, Writer};
 use margin_canon::{decode_decl, decode_decl_trusted, encode_decl, Arena, Decl, Name};
-use margin_checker::{public_statement, run, Env, ProverInput};
+use margin_checker::env::{constants, header_of};
+use margin_checker::{public_statement, run, DepOpening, Env, Origin, ProverInput};
 use margin_journal::Journal;
 use margin_kernel_nanoda::NanodaKernel;
 use std::collections::{BTreeMap, BTreeSet};
@@ -121,33 +122,269 @@ pub fn split_user(env: &Env, arena: &Arena, proj: Vec<Decl>) -> R<Vec<Decl>> {
 pub struct Prepared {
     pub input: ProverInput,
     pub user: usize,
+    /// Opened declarations, in full and as statements, over the whole library.
     pub env_full: usize,
     pub env_header: usize,
 }
 
-/// Build the prover input: user declarations, the environment cone with one multi-proof,
-/// the claims and the owner key.
-pub fn prepare(env: &Env, arena: &Arena, user: &[Decl], claims: &[String], owner: [u8; 32], open_theorems: bool) -> Prepared {
-    let (full, header) = env.cone(arena, user, open_theorems);
-    let (env_decls, env_proof) = env.open(arena, &full, &header);
+/// Which library declarations to open in full.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpenMode {
+    /// Only what the kernel uses: a recorded native run decides (the default).
+    Minimal,
+    /// Everything reachable, theorems as statements unless `open_theorems`.
+    Reachable { open_theorems: bool },
+}
+
+/// A proved module: its interface (an [`Env`] of its own declarations with their axiom
+/// sets; same leaf format as the environment) and the journal of its receipt.
+pub struct ModuleIface {
+    pub name: Name,
+    pub iface: Env,
+    /// `MOD1` journal bytes of the module receipt.
+    pub journal: Vec<u8>,
+    /// Cache key of the module run (where its receipt is stored).
+    pub key: String,
+}
+
+/// Declarations a run may use: the trusted environment (source 0) and the interfaces of
+/// proved modules (sources 1..).
+pub struct Library<'a> {
+    pub env: &'a Env,
+    pub mods: Vec<&'a ModuleIface>,
+    by_name: BTreeMap<Name, (usize, usize)>,
+}
+
+impl<'a> Library<'a> {
+    pub fn new(env: &'a Env, mods: Vec<&'a ModuleIface>) -> R<Self> {
+        let mut by_name = BTreeMap::new();
+        for (k, m) in mods.iter().enumerate() {
+            for (n, &i) in &m.iface.by_name {
+                if env.by_name.contains_key(n) || by_name.insert(n.clone(), (k + 1, i)).is_some() {
+                    return Err(format!("`{n}` is defined twice (module `{}`)", m.name));
+                }
+            }
+        }
+        Ok(Self { env, mods, by_name })
+    }
+
+    fn source(&self, src: usize) -> &Env {
+        if src == 0 {
+            self.env
+        } else {
+            &self.mods[src - 1].iface
+        }
+    }
+
+    /// `(source, declaration index)` of a constant.
+    pub fn lookup(&self, n: &Name) -> Option<(usize, usize)> {
+        self.env.by_name.get(n).map(|&i| (0, i)).or_else(|| self.by_name.get(n).copied())
+    }
+
+    fn decl(&self, (src, i): (usize, usize)) -> &Decl {
+        &self.source(src).decls[i]
+    }
+}
+
+type Loc = (usize, usize);
+
+/// Library declarations a run needs for `user`, as `(full, header_only)` sets: every
+/// constant reachable from the user declarations; through full openings also from
+/// definition bodies and inductive blocks. `used` (minimal mode) lists what the kernel
+/// consulted; `force_full` must be opened in full whatever the mode.
+fn cone(
+    lib: &Library,
+    arena: &Arena,
+    user: &[Decl],
+    mode: OpenMode,
+    used: &BTreeSet<Loc>,
+    force_full: &BTreeSet<Loc>,
+) -> (BTreeSet<Loc>, BTreeSet<Loc>) {
+    let mut full = BTreeSet::new();
+    let mut header = BTreeSet::new();
+    let mut work: Vec<Name> = user.iter().flat_map(|d| constants(arena, &d.exprs())).collect();
+    while let Some(n) = work.pop() {
+        let Some(loc) = lib.lookup(&n) else { continue };
+        if full.contains(&loc) || header.contains(&loc) {
+            continue;
+        }
+        let d = lib.decl(loc);
+        let as_header = header_of(d).is_some()
+            && !force_full.contains(&loc)
+            && match mode {
+                OpenMode::Reachable { open_theorems } => !open_theorems && matches!(d, Decl::Theorem { .. }),
+                OpenMode::Minimal => !used.contains(&loc),
+            };
+        if as_header {
+            header.insert(loc);
+            work.extend(constants(arena, &d.type_exprs()));
+        } else {
+            full.insert(loc);
+            work.extend(constants(arena, &d.exprs()));
+        }
+    }
+    (full, header)
+}
+
+/// Module declarations the public statement of `claims` shows (definitions in full,
+/// theorems as statements): they must be opened in full.
+fn statement_modules(lib: &Library, arena: &Arena, user: &[Decl], claims: &[String]) -> BTreeSet<Loc> {
+    let user_by_name: BTreeMap<Name, &Decl> =
+        user.iter().flat_map(|d| d.defined_names().into_iter().map(move |n| (n, d))).collect();
+    let mut out = BTreeSet::new();
+    let mut seen = BTreeSet::new();
+    let mut work: Vec<Name> = claims
+        .iter()
+        .filter_map(|c| user_by_name.get(&Name::from_dotted(c)))
+        .flat_map(|d| constants(arena, &d.type_exprs()))
+        .collect();
+    while let Some(n) = work.pop() {
+        if !seen.insert(n.clone()) {
+            continue;
+        }
+        let d = if let Some(d) = user_by_name.get(&n) {
+            *d
+        } else if let Some(loc @ (src, _)) = lib.lookup(&n) {
+            if src == 0 {
+                continue;
+            }
+            out.insert(loc);
+            lib.decl(loc)
+        } else {
+            continue;
+        };
+        let follow = if matches!(d, Decl::Theorem { .. }) { d.type_exprs() } else { d.exprs() };
+        work.extend(constants(arena, &follow));
+    }
+    out
+}
+
+/// What to prove: the user declarations of one run, and how to label its output.
+pub struct Job<'a> {
+    pub user: &'a [Decl],
+    /// Empty: module mode (the run commits a module journal).
+    pub claims: &'a [String],
+    pub owner: [u8; 32],
+    pub module: Name,
+    /// Image ID of the checker that will prove this run (and that proved the modules).
+    pub self_id: [u8; 32],
+}
+
+fn build_input(lib: &Library, arena: &Arena, job: &Job, full: &BTreeSet<Loc>, header: &BTreeSet<Loc>) -> Prepared {
+    let pick = |set: &BTreeSet<Loc>, src: usize| -> Vec<usize> { set.iter().filter(|l| l.0 == src).map(|l| l.1).collect() };
+    let (env_decls, env_proof) = lib.env.open(arena, &pick(full, 0), &pick(header, 0));
+    let mut deps = Vec::new();
+    for (k, m) in lib.mods.iter().enumerate() {
+        let (f, h) = (pick(full, k + 1), pick(header, k + 1));
+        if f.is_empty() && h.is_empty() {
+            continue;
+        }
+        let (entries, proof) = m.iface.open(arena, &f, &h);
+        deps.push(DepOpening { journal: m.journal.clone(), entries, proof });
+    }
     Prepared {
         input: ProverInput {
-            env_root: env.tree.root,
-            owner,
-            claimed: claims.iter().map(|c| Name::from_dotted(c)).collect(),
+            env_root: lib.env.tree.root,
+            owner: job.owner,
+            self_id: job.self_id,
+            module: job.module.clone(),
+            claimed: job.claims.iter().map(|c| Name::from_dotted(c)).collect(),
             env_decls,
             env_proof,
-            user_decls: user.iter().map(|d| encode_decl(arena, d)).collect(),
+            deps,
+            user_decls: job.user.iter().map(|d| encode_decl(arena, d)).collect(),
         },
-        user: user.len(),
+        user: job.user.len(),
         env_full: full.len(),
         env_header: header.len(),
     }
 }
 
-/// Native pre-check: exactly what the guest runs, without a proof.
+/// Build the prover input of `job` over `lib`. With [`OpenMode::Minimal`]: prepare
+/// everything reachable, run the checker natively while recording which library
+/// declarations the kernel consults, prepare again opening only those in full, and check
+/// that input natively too (falling back to the reachable input if it is rejected).
+/// Soundness does not depend on this choice: the guest checks whatever it is given.
+pub fn prepare_job(lib: &Library, arena: &Arena, job: &Job, mode: OpenMode) -> R<Prepared> {
+    let force = if job.claims.is_empty() { BTreeSet::new() } else { statement_modules(lib, arena, job.user, job.claims) };
+    let none = BTreeSet::new();
+    let reach_mode = match mode {
+        OpenMode::Minimal => OpenMode::Reachable { open_theorems: false },
+        m => m,
+    };
+    let (full, header) = cone(lib, arena, job.user, reach_mode, &none, &force);
+    let reachable = build_input(lib, arena, job, &full, &header);
+    if mode != OpenMode::Minimal {
+        return Ok(reachable);
+    }
+    let t = Instant::now();
+    let mut kernel = NanodaKernel { record_value_uses: true, ..Default::default() };
+    run(&reachable.input, &mut kernel).map_err(|e| format!("REJECTED: {e:?}"))?;
+    // The kernel's environment is the opened entries in input order: environment, then
+    // each module's entries.
+    let opened: Vec<&margin_checker::EnvEntry> =
+        reachable.input.env_decls.iter().chain(reachable.input.deps.iter().flat_map(|d| d.entries.iter())).collect();
+    let used: BTreeSet<Loc> = kernel
+        .value_uses
+        .iter()
+        .filter_map(|&i| {
+            let bytes = match &opened.get(i)?.opening {
+                margin_checker::Opening::Full(b) => b,
+                margin_checker::Opening::Header { header, .. } => header,
+            };
+            let mut a = Arena::new();
+            lib.lookup(&decode_decl_trusted(bytes, &mut a).ok()?.key())
+        })
+        .collect();
+    eprintln!(
+        "native check (recording): accepted, kernel consulted {} of {} opened declarations ({:.1?})",
+        used.len(),
+        reachable.env_full,
+        t.elapsed()
+    );
+    let (full, header) = cone(lib, arena, job.user, OpenMode::Minimal, &used, &force);
+    let minimal = build_input(lib, arena, job, &full, &header);
+    let t = Instant::now();
+    match run(&minimal.input, &mut NanodaKernel::default()) {
+        Ok(_) => {
+            eprintln!("native check (minimal openings): accepted ({:.1?})", t.elapsed());
+            Ok(minimal)
+        }
+        Err(e) => {
+            eprintln!("warning: minimal openings rejected ({e:?}); using all reachable declarations");
+            Ok(reachable)
+        }
+    }
+}
+
+/// Single-run prover input over the environment alone (no modules): the claims are
+/// proved in one receipt.
+pub fn prepare(env: &Env, arena: &Arena, user: &[Decl], claims: &[String], owner: [u8; 32], mode: OpenMode) -> R<Prepared> {
+    let lib = Library::new(env, vec![])?;
+    let job = Job { user, claims, owner, module: Name::from_dotted("Main"), self_id: [0; 32] };
+    prepare_job(&lib, arena, &job, mode)
+}
+
+/// Native pre-check of a claim run: exactly what the guest runs, without a proof (and
+/// without verifying assumed module receipts).
 pub fn check(input: &ProverInput) -> R<Journal> {
-    run(input, &mut NanodaKernel::default()).map_err(|e| format!("REJECTED: {e:?}"))
+    run(input, &mut NanodaKernel::default())
+        .and_then(|r| r.journal())
+        .map_err(|e| format!("REJECTED: {e:?}"))
+}
+
+/// Native run of a module job: returns the module journal and the module's interface,
+/// whose root must equal the journal's (it is what importers open against).
+pub fn check_module(input: &ProverInput, arena: &Arena, user: &[Decl]) -> R<(margin_journal::ModJournal, Env)> {
+    let r = run(input, &mut NanodaKernel::default()).map_err(|e| format!("REJECTED: {e:?}"))?;
+    let margin_checker::Output::Module(j) = r.output else {
+        return Err("not a module run".into());
+    };
+    let iface = Env::from_parts(arena, user.to_vec(), input.user_decls.clone(), r.user_axioms)?;
+    if iface.tree.root != j.iface_root {
+        return Err("internal error: interface root differs from the module journal".into());
+    }
+    Ok((j, iface))
 }
 
 /// Compare a journal (from a verified receipt) with the verifier's own statement export.
@@ -169,9 +406,9 @@ pub fn match_journal(journal: &Journal, env: &Env, arena: &mut Arena, stmt: Vec<
     }
     let lookup = |n: &Name| {
         if let Some(&i) = user_by_name.get(n) {
-            Some((&user[i], false))
+            Some((&user[i], Origin::User))
         } else {
-            env.by_name.get(n).map(|&i| (&env.decls[i], true))
+            env.by_name.get(n).map(|&i| (&env.decls[i], Origin::Env))
         }
     };
     let claimed: Vec<Name> = claims.iter().map(|c| Name::from_dotted(c)).collect();

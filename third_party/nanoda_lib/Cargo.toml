@@ -12,6 +12,11 @@ description = "A type checker for the Lean 4 programming language and theorem pr
 rand = "0.10.2"
 num-bigint = { version = "0.5.1", features = ["rand_0_10", "serde"] }
 
+[features]
+# Record which persistent declarations the type checker consults for their value or
+# reducibility hint (see `env::value_uses`). Native profiling only; off in the zkVM guest.
+record-value-uses = []
+
 [dependencies]
 indexmap = "2.13.0"
 rustc-hash = "1.1.0"

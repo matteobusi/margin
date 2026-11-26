@@ -6,6 +6,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Record the environment declarations the kernel consults (native profiling, see
+# `NanodaKernel::record_value_uses`). Never enabled in the zkVM guest.
+record = ["nanoda_lib/record-value-uses"]
+
 [dependencies]
 margin-canon = { workspace = true, features = ["std"] }
 margin-checker = { path = "../checker", default-features = false, features = ["std"] }

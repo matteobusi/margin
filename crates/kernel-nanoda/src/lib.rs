@@ -39,6 +39,11 @@ const CONFIG: &str = r#"{
 pub struct NanodaKernel {
     /// Optional profiling hook, called with a phase name at each phase boundary.
     pub phase_hook: Option<fn(&str)>,
+    /// Record which environment declarations the kernel consults for their value or
+    /// reducibility hint (needs the `record` feature; native only). The result, as
+    /// indices into the `env` slice of the last `check`, goes to `value_uses`.
+    pub record_value_uses: bool,
+    pub value_uses: Vec<usize>,
 }
 
 impl NanodaKernel {
@@ -92,8 +97,28 @@ impl Kernel for NanodaKernel {
                     env_len + user_len
                 ));
             }
+            #[cfg(feature = "record")]
+            if self.record_value_uses {
+                nanoda_lib::env::value_uses::start();
+            }
+            #[cfg(not(feature = "record"))]
+            if self.record_value_uses {
+                return Err("value-use recording needs the `record` feature".into());
+            }
             for (_, d) in export.declars.iter().skip(env_len) {
                 export.check_declar(d);
+            }
+            #[cfg(feature = "record")]
+            if self.record_value_uses {
+                // nanoda's declaration index → index of the env declaration that defines it.
+                let owner: Vec<usize> =
+                    env.iter().enumerate().flat_map(|(i, d)| std::iter::repeat_n(i, d.defined_names().len())).collect();
+                let mut uses: Vec<usize> = nanoda_lib::env::value_uses::take()
+                    .into_iter()
+                    .filter_map(|idx| owner.get(idx).copied())
+                    .collect();
+                uses.dedup();
+                self.value_uses = uses;
             }
             self.mark("kernel: nanoda checked");
             Ok(())

@@ -85,6 +85,7 @@ mod tests {
             claims: vec![vec![1, 2, 3]],
             stmt_cone: vec![],
             axioms: vec![],
+            assumed_id: [0; 32],
         }
     }
 

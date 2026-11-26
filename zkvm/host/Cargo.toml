@@ -22,7 +22,9 @@ unsound-skip-typecheck = ["margin-methods/unsound-skip-typecheck"]
 margin-methods = { path = "../methods" }
 margin-canon = { path = "../../crates/canon", features = ["lean4export"] }
 margin-checker = { path = "../../crates/checker" }
-risc0-zkvm = { version = "3" }
+# `prove`: the in-process prover. Without it, proving needs a separate `r0vm` binary
+# (RISC Zero toolchain), which users of the released binary do not have.
+risc0-zkvm = { version = "3", features = ["prove"] }
 bincode = "1"
 hex = "0.4"
 margin-envbuild = { path = "../../crates/envbuild" }

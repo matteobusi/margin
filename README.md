@@ -49,6 +49,18 @@ margin claim --note "…" receipt.bin owner.key > claim.json           # authors
 margin verify --claim claim.json receipt.bin
 ```
 
+Large developments (thousands of declarations): prove module by module. Every module gets
+its own receipt, cached by content; the final receipt composes them and looks exactly
+like a single-run receipt to verifiers.
+
+```bash
+margin build --check-only --cycles <env.cache> Main main.receipt thm1 thm2   # check everything, exact cost
+margin build <env.cache> Main main.receipt thm1 thm2                          # prove (local CPU)
+margin build --cluster http://localhost:8081 <env.cache> Main main.receipt thm1 thm2   # prove on GPUs
+```
+
+See [docs/composition.md](docs/composition.md) and [docs/cluster.md](docs/cluster.md).
+
 `margin run` = `margin export` (lean4export) + `margin prepare` + `margin check` (native, milliseconds)
 + `margin prove` (zkVM). `lean4export` must be built for your Lean version and found via
 `$MARGIN_LEAN4EXPORT` or `PATH`.

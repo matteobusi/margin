@@ -58,6 +58,8 @@ pub enum VerifyError {
     NoAcceptedChecker,
     UnknownEnvironment(String),
     Authorship(String),
+    /// The receipt assumed module receipts of another image.
+    ForeignModules,
 }
 
 impl std::fmt::Display for VerifyError {
@@ -69,6 +71,7 @@ impl std::fmt::Display for VerifyError {
             VerifyError::NoAcceptedChecker => write!(f, "receipt does not verify against any accepted checker"),
             VerifyError::UnknownEnvironment(r) => write!(f, "env_root {r} is not an accepted environment"),
             VerifyError::Authorship(m) => write!(f, "authorship claim rejected: {m}"),
+            VerifyError::ForeignModules => write!(f, "receipt assumed module receipts of another checker"),
         }
     }
 }
@@ -98,6 +101,11 @@ pub fn verify_receipt(receipt: &[u8], accepted: &[Checker], envs: &[Environment]
         let Ok(id) = Digest::try_from(bytes.as_slice()) else { continue };
         if receipt.verify(id).is_ok() {
             let journal = Journal::decode(&receipt.journal.bytes).map_err(VerifyError::Journal)?;
+            // A receipt composed from module receipts must have assumed receipts of its
+            // own checker: otherwise an unaccepted image could have produced them.
+            if journal.assumed_id != [0; 32] && journal.assumed_id != *id.as_bytes() {
+                return Err(VerifyError::ForeignModules);
+            }
             let environment = accepted_environment(&journal, envs)?.clone();
             return Ok(Verified { checker: c.clone(), environment, journal });
         }

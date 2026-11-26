@@ -9,7 +9,7 @@ authors.workspace = true
 [dependencies]
 margin-canon = { workspace = true, features = ["std", "lean4export"] }
 margin-checker = { path = "../checker", features = ["std"] }
-margin-kernel-nanoda = { path = "../kernel-nanoda" }
+margin-kernel-nanoda = { path = "../kernel-nanoda", features = ["record"] }
 margin-verify = { path = "../verify", features = ["risc0"] }
 margin-journal = { workspace = true, features = ["std"] }
 hex.workspace = true

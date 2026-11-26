@@ -184,6 +184,9 @@ pub struct Arena {
     names: Interner<Name>,
     levels: Interner<LevelNode>,
     lists: Interner<Box<[LevelId]>>,
+    /// Encoded name bytes → interned name. Lets the decoder skip building a `Name` for
+    /// names it has seen before (most constant references).
+    raw_names: HashTable<(Box<[u8]>, NameId)>,
 }
 
 impl Default for Arena {
@@ -193,6 +196,7 @@ impl Default for Arena {
             names: Interner::default(),
             levels: Interner::default(),
             lists: Interner::default(),
+            raw_names: HashTable::new(),
         };
         a.names.get_or_insert(Name::anon());
         a.levels.get_or_insert(LevelNode::Zero);
@@ -248,6 +252,20 @@ impl Arena {
             return NameId(i);
         }
         NameId(self.names.get_or_insert(n.clone()))
+    }
+
+    /// Intern a name given its wire encoding (see [`crate::wire::Reader::name_raw`]).
+    pub fn intern_name_raw(&mut self, raw: &[u8]) -> Result<NameId, crate::wire::Error> {
+        let h = fx(raw);
+        if let Some((_, id)) = self.raw_names.find(h, |(b, _)| **b == *raw) {
+            return Ok(*id);
+        }
+        let mut r = crate::wire::Reader::new(raw);
+        let name = r.name()?;
+        r.finish()?;
+        let id = self.intern_name(&name);
+        self.raw_names.insert_unique(h, (raw.into(), id), |(b, _)| fx(&**b));
+        Ok(id)
     }
 
     pub fn name(&self, id: NameId) -> &Name {

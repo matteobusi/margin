@@ -45,15 +45,18 @@ fn checker_journal_renders_statement_but_not_proof() {
     let input = ProverInput {
         env_root: env_set.tree.root,
         owner: [3; 32],
+        self_id: [0; 32],
+        module: Name::from_dotted("Main"),
         claimed: vec![Name::from_dotted("main")],
         env_decls,
         env_proof,
+        deps: vec![],
         user_decls: vec![encode_decl(&a, &secret), encode_decl(&a, &main)],
     };
     // The guest reads the encoded input, so test the round trip too.
     let input = ProverInput::decode(&input.encode()).unwrap();
 
-    let journal = run(&input, &mut UncheckedKernel).unwrap();
+    let journal = run(&input, &mut UncheckedKernel).unwrap().journal().unwrap();
     let journal = margin_journal::Journal::decode(&journal.encode()).unwrap();
     let text = margin_verify::render_journal(&journal).unwrap();
     assert!(text.contains("theorem main : True"), "{text}");

@@ -14,7 +14,7 @@
 use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
 use margin_canon::merkle::{leaf_hash, EnvTree, MultiProof};
 use margin_canon::wire::{Error, Reader, Writer};
-use margin_canon::{axioms_hash, decl_hash, encode_decl, name_hash, Arena, Decl, ExprId, ExprNode, Hash32, Name};
+use margin_canon::{axioms_hash, decl_hash, encode_decl, name_hash, Arena, Decl, ExprId, ExprNode, Hash32, Name, Safety};
 
 /// How one environment declaration is revealed to the guest.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,10 +59,18 @@ impl EnvEntry {
     }
 }
 
-/// The header form of a declaration: theorems lose their proof.
+/// The header form of a declaration: its statement (name, universe parameters, type).
+///
+/// Theorems, safe definitions and safe opaque constants have one; the kernel then sees the
+/// constant as opaque (an axiom of the same type), which only removes definitional
+/// equalities and so can only make it reject. Unsafe and partial declarations, axioms,
+/// quotients and inductive blocks have none: they are always opened in full (and nanoda
+/// rejects unsafe and partial declarations outright).
 pub fn header_of(d: &Decl) -> Option<Decl> {
     match d {
-        Decl::Theorem { name, lparams, ty, .. } => {
+        Decl::Theorem { name, lparams, ty, .. }
+        | Decl::Definition { name, lparams, ty, safety: Safety::Safe, .. }
+        | Decl::Opaque { name, lparams, ty, is_unsafe: false, .. } => {
             Some(Decl::Statement { name: name.clone(), lparams: lparams.clone(), ty: *ty })
         }
         _ => None,
@@ -241,30 +249,5 @@ impl Env {
             })
             .collect();
         (entries, proof)
-    }
-
-    /// Declarations the kernel may need for `user`: everything reachable through types,
-    /// definition bodies and inductive blocks. With `open_theorems`, also through
-    /// theorem proofs (fallback if the kernel needs to unfold a library theorem).
-    /// Returns `(full, header_only)` declaration indices.
-    pub fn cone(&self, arena: &Arena, user: &[Decl], open_theorems: bool) -> (Vec<usize>, Vec<usize>) {
-        let mut full = alloc::collections::BTreeSet::new();
-        let mut header = alloc::collections::BTreeSet::new();
-        let mut work: Vec<Name> = user.iter().flat_map(|d| constants(arena, &d.exprs())).collect();
-        while let Some(n) = work.pop() {
-            let Some(&i) = self.by_name.get(&n) else { continue };
-            if full.contains(&i) || header.contains(&i) {
-                continue;
-            }
-            let d = &self.decls[i];
-            if !open_theorems && matches!(d, Decl::Theorem { .. }) {
-                header.insert(i);
-                work.extend(constants(arena, &d.type_exprs()));
-            } else {
-                full.insert(i);
-                work.extend(constants(arena, &d.exprs()));
-            }
-        }
-        (full.into_iter().collect(), header.into_iter().collect())
     }
 }

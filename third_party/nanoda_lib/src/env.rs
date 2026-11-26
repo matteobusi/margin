@@ -275,6 +275,25 @@ impl<'x, 'a: 'x> Env<'x, 'a> {
         }
     }
 
+    /// Record that the checker consulted `n`'s value or reducibility hint (feature
+    /// `record-value-uses`; a no-op otherwise). Only persistent declarations are recorded,
+    /// by their index in the declaration map.
+    #[inline]
+    pub fn note_value_use(&self, n: &NamePtr<'a>) {
+        #[cfg(feature = "record-value-uses")]
+        if let Some(idx) = self.declars.get_index_of(n) {
+            if idx < self.cutoff {
+                value_uses::VALUE_USES.with(|v| {
+                    if let Some(set) = v.borrow_mut().as_mut() {
+                        set.insert(idx);
+                    }
+                });
+            }
+        }
+        #[cfg(not(feature = "record-value-uses"))]
+        let _ = n;
+    }
+
     pub fn get_inductive(&self, n: &NamePtr<'a>) -> Option<&InductiveData<'a>> {
         match self.get_declar(n) {
             Some(Declar::Inductive(i)) => Some(i),
@@ -324,5 +343,26 @@ impl<'x, 'a: 'x> Env<'x, 'a> {
             Declar::Definition { info, val, .. } | Declar::Theorem { info, val, .. } => Some((info.uparams, *val)),
             _ => None,
         }
+    }
+}
+
+/// Recording of value uses (feature `record-value-uses`).
+#[cfg(feature = "record-value-uses")]
+pub mod value_uses {
+    use std::cell::RefCell;
+    use std::collections::BTreeSet;
+
+    thread_local! {
+        pub(crate) static VALUE_USES: RefCell<Option<BTreeSet<usize>>> = const { RefCell::new(None) };
+    }
+
+    /// Start recording on this thread (clears any previous recording).
+    pub fn start() {
+        VALUE_USES.with(|v| *v.borrow_mut() = Some(BTreeSet::new()));
+    }
+
+    /// Stop recording and return the indices of the declarations used.
+    pub fn take() -> BTreeSet<usize> {
+        VALUE_USES.with(|v| v.borrow_mut().take().unwrap_or_default())
     }
 }

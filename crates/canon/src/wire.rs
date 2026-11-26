@@ -187,6 +187,24 @@ impl<'a> Reader<'a> {
         let b = self.bytes()?;
         core::str::from_utf8(b).map(String::from).map_err(|_| Error::BadUtf8)
     }
+    /// Skip one encoded name and return its raw bytes, without allocating. The parts are
+    /// checked structurally; UTF-8 is checked when the name is decoded.
+    pub fn name_raw(&mut self) -> Result<&'a [u8], Error> {
+        let start = self.pos;
+        let n = self.count()?;
+        for _ in 0..n {
+            match self.u8()? {
+                0 => {
+                    self.bytes()?;
+                }
+                1 => {
+                    self.uvar()?;
+                }
+                t => return Err(Error::BadTag(t)),
+            }
+        }
+        Ok(&self.buf[start..self.pos])
+    }
     pub fn name(&mut self) -> Result<Name, Error> {
         let n = self.count()?;
         let mut parts = Vec::with_capacity(n);
