@@ -1,0 +1,16 @@
+{
+  "name": "margin-web",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/check-prove-sh.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "wasm": "cargo build --release -p margin-verify-wasm --target wasm32-unknown-unknown --manifest-path ../Cargo.toml && wasm-bindgen --target web --out-dir public/wasm/verify ../target/wasm32-unknown-unknown/release/margin_verify_wasm.wasm"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "vite": "5.4.10"
+  }
+}

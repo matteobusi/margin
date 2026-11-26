@@ -1,0 +1,30 @@
+[package]
+name = "margin-host"
+description = "The margin command-line tool: export, prepare, prove, verify, match, claim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "margin"
+path = "src/main.rs"
+
+[features]
+# In-process prover with Apple GPU acceleration.
+metal = ["risc0-zkvm/metal"]
+kernel-nanoda = ["margin-methods/kernel-nanoda"]
+unsound-skip-typecheck = ["margin-methods/unsound-skip-typecheck"]
+
+[dependencies]
+margin-methods = { path = "../methods" }
+margin-canon = { path = "../../crates/canon", features = ["lean4export"] }
+margin-checker = { path = "../../crates/checker" }
+risc0-zkvm = { version = "3" }
+bincode = "1"
+hex = "0.4"
+margin-envbuild = { path = "../../crates/envbuild" }
+margin-verify = { path = "../../crates/verify", features = ["risc0"] }
+margin-journal = { path = "../../crates/journal" }
+getrandom = "0.3"
+serde_json = "1"

@@ -1,0 +1,18 @@
+[package]
+name = "margin-checker"
+description = "Axiom policy, statement cone and kernel driver for margin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = ["std"]
+std = ["margin-canon/std", "margin-journal/std"]
+# DANGER: a kernel that accepts every declaration without a type check.
+# For pipeline tests only. Receipts from it prove nothing. Never accept its image ID.
+unsound-skip-typecheck = []
+
+[dependencies]
+margin-canon.workspace = true
+margin-journal.workspace = true

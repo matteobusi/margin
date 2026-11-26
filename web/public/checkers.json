@@ -1,0 +1,8 @@
+[
+  {
+    "name": "nanoda_lib 0.4.32 (0da9f98) guest, release 0.0.1",
+    "image_id": "e5840c2d01825c81aeab4ceada8113bd53a23b429a1df9780a475d4cec6c7949",
+    "status": "experimental: kernel not formally verified",
+    "rebuild": "cd zkvm && MARGIN_REPRODUCIBLE=1 cargo build --release -p margin-host --features kernel-nanoda && ./target/release/margin image-id"
+  }
+]

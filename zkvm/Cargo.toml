@@ -1,0 +1,17 @@
+# Separate workspace: building the guest needs the RISC Zero toolchain (`rzup install`).
+[workspace]
+resolver = "2"
+members = ["host", "methods"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+authors = ["The margin contributors"]
+
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+debug = 1
+lto = true

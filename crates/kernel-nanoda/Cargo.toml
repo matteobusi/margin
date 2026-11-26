@@ -1,0 +1,20 @@
+[package]
+name = "margin-kernel-nanoda"
+description = "Lean 4 kernel for margin, backed by the vendored nanoda_lib type checker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+margin-canon = { workspace = true, features = ["std"] }
+margin-checker = { path = "../checker", default-features = false, features = ["std"] }
+nanoda_lib = { path = "../../third_party/nanoda_lib" }
+serde_json.workspace = true
+num-bigint = "0.5.1"
+
+[dev-dependencies]
+hex.workspace = true
+margin-journal = { workspace = true, features = ["std"] }
+serde_json.workspace = true
+margin-canon = { workspace = true, features = ["std", "lean4export"] }

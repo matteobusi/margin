@@ -1,0 +1,15 @@
+[
+  {
+    "name": "Mathlib 5d3d31c (Lean v4.37.0-rc1, lean4export df81913)",
+    "env_root": "fb4484bb90919eaa79dd32ec980663284e6c09ca2bbec02bf00723ad8f727a67",
+    "rebuild": "in mathlib4 at 5d3d31c: lake exe cache get && lake env lean4export Mathlib > mathlib.ndjson && margin env root mathlib.ndjson",
+    "lean": "leanprover/lean4:v4.37.0-rc1",
+    "mathlib": "5d3d31c50c7b58ed18150f0b58034c12cf3c6afa"
+  },
+  {
+    "name": "Lean v4.36.0 Init (lean4export 3.1, df81913)",
+    "env_root": "275127d992d75535efe7076f5b501dfed0faf59fca4d233c90c73220492bbb19",
+    "rebuild": "LEAN_PATH=$(lean --print-libdir) lean4export Init > init.ndjson && margin env root init.ndjson",
+    "lean": "leanprover/lean4:v4.36.0"
+  }
+]

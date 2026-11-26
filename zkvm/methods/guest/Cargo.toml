@@ -1,0 +1,22 @@
+[package]
+name = "margin-guest"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+
+[workspace]
+
+[features]
+# Kernels. Exactly one must be enabled.
+kernel-nanoda = ["dep:margin-kernel-nanoda"]
+# DANGER: no type check. Receipts prove nothing. Never publish this image ID as accepted.
+unsound-skip-typecheck = ["margin-checker/unsound-skip-typecheck"]
+
+[dependencies]
+margin-checker = { path = "../../../crates/checker", default-features = false }
+margin-kernel-nanoda = { path = "../../../crates/kernel-nanoda", optional = true }
+risc0-zkvm = { version = "3", default-features = false, features = ["std"] }
+
+# RISC Zero's SHA-256 accelerator (official patch of RustCrypto sha2).
+[patch.crates-io]
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.9-risczero.0" }

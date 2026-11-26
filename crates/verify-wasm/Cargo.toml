@@ -1,0 +1,21 @@
+[package]
+name = "margin-verify-wasm"
+description = "Browser bindings for margin-verify"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["risc0"]
+risc0 = ["margin-verify/risc0"]
+
+[dependencies]
+margin-verify = { path = "../verify" }
+margin-journal = { workspace = true, features = ["std"] }
+wasm-bindgen = "0.2"
+serde_json.workspace = true
+hex.workspace = true
