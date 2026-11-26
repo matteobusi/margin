@@ -82,4 +82,17 @@ else
   echo "RESULT composition-negative: rejected as expected (missing module receipt)"
 fi
 
+say "Segment size: larger segments page memory less often (fewer cycles), need more GPU memory"
+for po2 in 21 22; do
+  start=$(date +%s.%N)
+  if MARGIN_SEGMENT_PO2=$po2 "$M" prove "$C/A.input" "$WORK/A$po2.receipt" > "$WORK/po2-$po2.log" 2>&1; then
+    end=$(date +%s.%N)
+    cycles=$(grep -o "proved: [0-9]* cycles" "$WORK/po2-$po2.log" | grep -o "[0-9]*")
+    awk -v c="$cycles" -v s="$start" -v e="$end" -v p="$po2" \
+      'BEGIN { printf "RESULT segment-po2-%s: compose/A %d cycles (padded) in %.1f s = %.0f cycles/s\n", p, c, e - s, c / (e - s) }'
+  else
+    echo "RESULT segment-po2-$po2: FAILED ($(tail -1 "$WORK/po2-$po2.log"))"
+  fi
+done
+
 say "Done. Please send back the RESULT lines and the GPU name above."

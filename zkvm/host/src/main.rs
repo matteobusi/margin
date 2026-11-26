@@ -49,10 +49,19 @@ fn image_id_hex() -> String {
     hex::encode(Digest::from(MARGIN_GUEST_ID).as_bytes())
 }
 
+/// Segment size (log2 of cycles per segment). Larger segments page memory in and out
+/// less often (fewer total cycles) but need more prover memory (GPU memory on CUDA).
+/// The proved computation is the same; receipts are identical in meaning.
+fn segment_po2() -> u32 {
+    std::env::var("MARGIN_SEGMENT_PO2").ok().and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_SEGMENT_PO2)
+}
+const DEFAULT_SEGMENT_PO2: u32 = 20;
+
 /// Prove a prover input, with module receipts as assumptions, into a succinct receipt
 /// without assumptions (RISC Zero resolves them). Locally, or on a cluster.
 pub(crate) fn prove_receipt(input: &[u8], assumptions: &[risc0_zkvm::Receipt], cluster: Option<&Cluster>) -> R<(risc0_zkvm::Receipt, String)> {
     let mut b = ExecutorEnv::builder();
+    b.segment_limit_po2(segment_po2());
     b.write_slice(&[u32::try_from(input.len())?]).write_slice(input);
     for r in assumptions {
         b.add_assumption(r.clone());
@@ -90,6 +99,7 @@ fn prove(input: &[u8], out: &str, cluster: Option<&Cluster>) -> R<()> {
 pub(crate) fn execute_cycles(input: &[u8]) -> R<u64> {
     let parsed = ProverInput::decode(input).map_err(|e| e.to_string())?;
     let mut b = ExecutorEnv::builder();
+    b.segment_limit_po2(segment_po2());
     b.write_slice(&[u32::try_from(input.len())?]).write_slice(input);
     for d in &parsed.deps {
         b.add_assumption(risc0_zkvm::ReceiptClaim::ok(Digest::from(parsed.self_id), d.journal.clone()));
@@ -101,6 +111,7 @@ pub(crate) fn execute_cycles(input: &[u8]) -> R<u64> {
 /// Run the guest without proving (fast): reports cycles, so users can estimate cost.
 fn execute(input: &[u8]) -> R<()> {
     let env = ExecutorEnv::builder()
+        .segment_limit_po2(segment_po2())
         .write_slice(&[u32::try_from(input.len())?])
         .write_slice(input)
         .build()?;
